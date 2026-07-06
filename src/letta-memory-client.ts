@@ -163,8 +163,9 @@ class LettaDocumentsAdapter {
         )
         .then((result) => {
           const passage = result[0]!
-          this.cache.recordPassage(passage.id!, agentId)
-          return { id: passage.id!, status: "queued" } as DocumentUpdateResponse
+          if (!passage.id) throw new Error("Server returned a passage without an id")
+          this.cache.recordPassage(passage.id, agentId)
+          return { id: passage.id, status: "queued" } as DocumentUpdateResponse
         }),
     )
   }
@@ -357,8 +358,9 @@ export class LettaMemoryClient {
       this.cache.resolveAgentId(tag).then((agentId) =>
         this.letta.agents.passages.create(agentId, { text: body.content, tags: [tag] }).then((result) => {
           const passage = result[0]!
-          this.cache.recordPassage(passage.id!, agentId)
-          return { id: passage.id!, status: "queued" } as AddResponse
+          if (!passage.id) throw new Error("Server returned a passage without an id")
+          this.cache.recordPassage(passage.id, agentId)
+          return { id: passage.id, status: "queued" } as AddResponse
         }),
       ),
     )
