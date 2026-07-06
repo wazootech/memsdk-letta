@@ -1,0 +1,12 @@
+memsdk-letta
+
+This project is an independent interoperability implementation of the
+memsdk Supermemory-compatible interface, backed by Letta memory.
+
+Supermemory is a trademark of its respective owner. Letta is a trademark
+of its respective owner. This project is not affiliated with, endorsed by,
+or sponsored by either company.
+
+The memsdk interface specification is derived from the public TypeScript
+type surface of the supermemory npm package (v4.24.12), used solely for
+the purpose of achieving TypeScript interface compatibility.

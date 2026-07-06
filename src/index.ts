@@ -1,11 +1,3 @@
-import type { MemoryClient } from "memsdk"
-
-export interface LettaMemoryClientOptions {
-  lettaClient: unknown
-}
-
-export function createLettaMemoryClient(
-  _options: LettaMemoryClientOptions,
-): MemoryClient {
-  throw new Error("createLettaMemoryClient is not implemented yet")
-}
+export { LettaMemoryClient } from "./letta-memory-client.js"
+export type { LettaMemoryClientOptions } from "./letta-memory-client.js"
+export { LettaHttpError } from "./http-client.js"
