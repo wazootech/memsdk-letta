@@ -26,7 +26,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "memsdk": "file:../memsdk"
+    "memsdk": "github:wazootech/memsdk#initial-scaffold"
   },
   "devDependencies": {
     "@types/node": "^24.0.10",
