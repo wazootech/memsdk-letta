@@ -121,8 +121,7 @@ class LettaDocumentsAdapter {
     if (!agentId) return reject(`Unknown passage: ${id}`)
     return wrap(
       this.letta.agents.passages.list(agentId, {}).then((passages) => {
-        const arr = Array.isArray(passages) ? passages as any[] : (passages as { data?: Array<any> }).data ?? []
-        const p = arr.find((p) => p.id === id)
+        const p = passages.find((p) => p.id === id)
         if (!p) throw new Error(`Passage not found: ${id}`)
         const tag = this.cache.getTagForAgentId(agentId) ?? "unknown"
         return passageToDocumentGetResponse(p, tag)
@@ -135,8 +134,7 @@ class LettaDocumentsAdapter {
     return wrap(
       this.cache.resolveAgentId(tag).then((agentId) =>
         this.letta.agents.passages.list(agentId, {}).then((passages) => {
-          const arr = Array.isArray(passages) ? passages : (passages as { data?: Array<unknown> }).data ?? []
-          const memories = arr.map((p: any) => passageToDocumentListMemory(p, tag))
+          const memories = passages.map((p) => passageToDocumentListMemory(p, tag))
           return {
             memories,
             pagination: {
@@ -164,7 +162,7 @@ class LettaDocumentsAdapter {
           }),
         )
         .then((result) => {
-          const passage = Array.isArray(result) ? result[0]! : result
+          const passage = result[0]!
           this.cache.recordPassage(passage.id!, agentId)
           return { id: passage.id!, status: "queued" } as DocumentUpdateResponse
         }),
@@ -350,7 +348,7 @@ export class LettaMemoryClient {
     return wrap(
       this.cache.resolveAgentId(tag).then((agentId) =>
         this.letta.agents.passages.create(agentId, { text: body.content, tags: [tag] }).then((result) => {
-          const passage = Array.isArray(result) ? result[0]! : result
+          const passage = result[0]!
           this.cache.recordPassage(passage.id!, agentId)
           return { id: passage.id!, status: "queued" } as AddResponse
         }),
