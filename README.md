@@ -43,8 +43,8 @@ const results = await client.search.documents({ q: "ML", containerTag: "user_123
 
 ## Conformance
 
-- **Required interface conformance**: All 16 methods present with matching types
-- **Required behavior conformance**: Core add/get/list/search/update/delete/forget flows verified 10/10 against a live Letta Docker server via [memsdk-e2e](https://github.com/wazootech/memsdk-e2e)
+- **Required interface conformance**: Every `SupermemoryInterface` method is wired to a typed Letta SDK call with matching parameter and response types. Verified at compile time via type-level compatibility test.
+- **Required behavior conformance**: Core add/get/list/search/update/delete/forget flows verified against a live Letta Docker server via [memsdk-e2e](https://github.com/wazootech/memsdk-e2e)
 - **Optional capability**: `uploadFile` (verified passing with inline `embedding_config`), `listProcessing` (returns empty), `asResponse()`/`withResponse()` (not implemented)
 
 ## License
