@@ -105,6 +105,15 @@ function uploadableToLetta(file: Uploadable): LettaUploadable {
   return new File([], "upload.bin")
 }
 
+interface SearchResultItem {
+  id: string
+  content: string
+  timestamp: string
+  tags?: Array<string>
+  score?: number
+  metadata?: Record<string, unknown>
+}
+
 class LettaDocumentsAdapter {
   constructor(
     private readonly client: LettaMemoryClient,
@@ -252,9 +261,9 @@ class LettaSearchAdapter {
     return wrap(
       this.cache.resolveAgentId(tag).then((agentId) =>
         this.letta.agents.passages.search(agentId, { query: body.q, top_k: 10 }).then((result) => ({
-          results: result.results.map((r: any) => ({
-            chunks: [{ content: r.content ?? r.text, isRelevant: true, score: r.score ?? 0 }],
-            createdAt: r.timestamp ?? "",
+          results: result.results.map((r: SearchResultItem) => ({
+            chunks: [{ content: r.content, isRelevant: true, score: r.score ?? 0 }],
+            createdAt: r.timestamp,
             documentId: r.id,
             metadata: r.metadata ?? null,
             score: r.score ?? 0,
@@ -278,13 +287,13 @@ class LettaSearchAdapter {
     return wrap(
       this.cache.resolveAgentId(tag).then((agentId) =>
         this.letta.agents.passages.search(agentId, { query: body.q, top_k: 10 }).then((result) => {
-          const results: SearchMemoryResult[] = result.results.map((r: any) => ({
+          const results: SearchMemoryResult[] = result.results.map((r: SearchResultItem) => ({
             id: r.id,
             metadata: r.metadata ?? null,
             similarity: r.score ?? 0,
             updatedAt: "",
-            memory: r.content ?? r.text,
-            chunk: r.content ?? r.text,
+            memory: r.content,
+            chunk: r.content,
           }))
           return { results, timing: 0, total: result.count } as SearchMemoriesResponse
         }),
