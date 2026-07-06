@@ -313,16 +313,24 @@ class LettaMemoriesAdapter {
 
   updateMemory(body: MemoryUpdateMemoryParams, _opts?: RequestOptions): APIPromise<MemoryUpdateMemoryResponse> {
     return this.cache.resolveAgentId(body.containerTag).then((agentId) =>
-      this.letta.agents.blocks.update("memory", { agent_id: agentId, value: body.newContent }).then((result) => ({
-        id: result.id,
-        createdAt: new Date().toISOString(),
-        forgetAfter: null,
-        forgetReason: null,
-        memory: body.newContent,
-        parentMemoryId: null,
-        rootMemoryId: null,
-        version: 1,
-      })),
+      this.letta.agents.blocks.list(agentId, {}).then((page) => {
+        const blocks: Array<{ id: string; label?: string | null; value: string }> =
+          (page as { data?: Array<{ id: string; label?: string | null; value: string }> }).data ?? []
+        const target = blocks.find((b) => b.label === "human") ?? blocks[0]
+        if (!target) throw new Error("No blocks found on agent — cannot update memory")
+        return this.letta.agents.blocks
+          .update(target.label ?? target.id, { agent_id: agentId, value: body.newContent })
+          .then((result) => ({
+            id: result.id,
+            createdAt: new Date().toISOString(),
+            forgetAfter: null,
+            forgetReason: null,
+            memory: body.newContent,
+            parentMemoryId: null,
+            rootMemoryId: null,
+            version: 1,
+          }))
+      }),
     ) as APIPromise<MemoryUpdateMemoryResponse>
   }
 }

@@ -328,8 +328,11 @@ describe("LettaMemoryClient", () => {
   })
 
   describe("memories.updateMemory", () => {
-    it("updates a block", async () => {
-      mockBlockUpdate.mockResolvedValue(mockBlock("b1", "memory", "updated memory"))
+    it("finds human block and updates it", async () => {
+      mockBlockList.mockResolvedValue({
+        data: [mockBlock("b0", "persona", "Friendly"), mockBlock("b1", "human", "old")],
+      })
+      mockBlockUpdate.mockResolvedValue(mockBlock("b1", "human", "updated memory"))
 
       const client = makeClient()
       const result = await client.memories.updateMemory({
@@ -341,8 +344,27 @@ describe("LettaMemoryClient", () => {
       expect(result.memory).toBe("updated memory")
       expect(result.version).toBe(1)
       expect(mockBlockUpdate).toHaveBeenCalledWith(
-        "memory",
+        "human",
         { agent_id: expect.any(String), value: "updated memory" },
+      )
+    })
+
+    it("falls back to first block when no human label", async () => {
+      mockBlockList.mockResolvedValue({
+        data: [mockBlock("b2", "custom", "first")],
+      })
+      mockBlockUpdate.mockResolvedValue(mockBlock("b2", "custom", "updated"))
+
+      const client = makeClient()
+      await client.memories.updateMemory({
+        containerTag: "user_123",
+        content: "first",
+        newContent: "updated",
+      })
+
+      expect(mockBlockUpdate).toHaveBeenCalledWith(
+        "custom",
+        { agent_id: expect.any(String), value: "updated" },
       )
     })
   })
