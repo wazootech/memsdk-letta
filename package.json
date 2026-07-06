@@ -26,6 +26,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@letta-ai/letta-client": "^1.12.1",
     "memsdk": "github:wazootech/memsdk#initial-scaffold"
   },
   "devDependencies": {

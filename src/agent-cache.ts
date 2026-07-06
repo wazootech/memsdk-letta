@@ -1,11 +1,15 @@
-import type { LettaHttpClient } from "./http-client.js"
+import type Letta from "@letta-ai/letta-client"
 
 export class AgentCache {
   private tagToAgentId = new Map<string, string>()
   private passageToAgentId = new Map<string, string>()
   private pendingAgents = new Map<string, Promise<string>>()
+  private folderId: string | null = null
 
-  constructor(private http: LettaHttpClient) {}
+  constructor(
+    private readonly letta: Letta,
+    private readonly model?: string,
+  ) {}
 
   async resolveAgentId(containerTag: string): Promise<string> {
     const cached = this.tagToAgentId.get(containerTag)
@@ -14,12 +18,12 @@ export class AgentCache {
     const pending = this.pendingAgents.get(containerTag)
     if (pending !== undefined) return pending
 
-    const agentP = this.http
-      .post<{ id: string }>("/v1/agents", { name: containerTag })
+    const agentP = this.letta.agents
+      .create({ name: containerTag, ...(this.model ? { model: this.model } : {}) })
       .then((agent) => {
-        this.tagToAgentId.set(containerTag, agent.id)
+        this.tagToAgentId.set(containerTag, agent.id!)
         this.pendingAgents.delete(containerTag)
-        return agent.id
+        return agent.id!
       })
       .catch((err) => {
         this.pendingAgents.delete(containerTag)
@@ -28,6 +32,16 @@ export class AgentCache {
 
     this.pendingAgents.set(containerTag, agentP)
     return agentP
+  }
+
+  async resolveFolderId(): Promise<string> {
+    if (this.folderId !== null) return this.folderId
+    const folder = await this.letta.folders.create({
+      name: "memsdk-uploads",
+      embedding: "text-embedding-ada-002",
+    })
+    this.folderId = folder.id!
+    return this.folderId
   }
 
   recordPassage(passageId: string, agentId: string): void {
