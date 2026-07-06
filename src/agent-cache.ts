@@ -36,7 +36,16 @@ export class AgentCache {
 
   async resolveFolderId(): Promise<string> {
     if (this.folderId !== null) return this.folderId
-    const folder = await this.letta.folders.create({ name: "memsdk-uploads" })
+    const folder = await this.letta.folders.create({
+      name: "memsdk-uploads",
+      embedding_config: {
+        embedding_dim: 768,
+        embedding_endpoint_type: "ollama",
+        embedding_model: "nomic-embed-text",
+        embedding_endpoint: "http://host.docker.internal:11434/v1",
+        handle: "ollama/nomic-embed-text",
+      },
+    })
     this.folderId = folder.id!
     return this.folderId
   }
