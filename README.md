@@ -26,23 +26,26 @@ const results = await client.search.documents({ q: "ML", containerTag: "user_123
 
 ## Mapping
 
-| Supermemory concept | Letta concept |
+| Supermemory concept | Letta SDK implementation |
 |---|---|
-| `containerTag` | Letta agent (one agent per tag, created on first use) |
-| `client.add()` / `documents.add()` | Passage in archival memory (`POST /v1/agents/{id}/passages`) |
-| `client.profile()` | Blocks aggregated (`GET /v1/agents/{id}/blocks`) |
-| `documents.*` | Passages CRUD |
-| `search.*` | Archival memory search |
-| `memories.forget` | Delete passage |
-| `memories.updateMemory` | Update block (`PATCH /v1/agents/{id}/blocks/{label}`) |
-| `documents.uploadFile` | File upload (minimal, capability-gated) |
-| `documents.listProcessing` | Returns empty (capability-gated) |
+| `containerTag` | Letta agent (one agent per tag, created via `letta.agents.create`) |
+| `client.add()` / `documents.add()` | `letta.agents.passages.create(agentId, { text, tags })` |
+| `client.profile()` | `letta.agents.blocks.list(agentId, {})` — aggregated block labels + values |
+| `documents.get()` | `letta.agents.passages.list(agentId, {})` — find by id |
+| `documents.list()` | `letta.agents.passages.list(agentId, {})` |
+| `documents.update()` | `letta.agents.passages.delete()` + `letta.agents.passages.create()` |
+| `documents.delete()` | `letta.agents.passages.delete(id, { agent_id })` |
+| `search.*` | `letta.agents.passages.search(agentId, { query, top_k })` |
+| `memories.forget()` | `letta.agents.passages.delete(id, { agent_id })` |
+| `memories.updateMemory()` | `letta.agents.blocks.list()` → find label → `letta.agents.blocks.update(label, { agent_id, value })` |
+| `documents.uploadFile()` | `letta.folders.create({ embedding_config })` + `letta.folders.files.upload(folderId, { file })` |
+| `documents.listProcessing()` | Returns empty (capability-gated) |
 
 ## Conformance
 
-- **Required interface conformance**: All 14 methods present with matching types
-- **Required behavior conformance**: Core add/get/list/search/update/delete flows tested against mocked Letta API
-- **Optional capability**: `uploadFile` (basic impl), `listProcessing` (returns empty), `asResponse()`/`withResponse()` (not implemented)
+- **Required interface conformance**: All 16 methods present with matching types
+- **Required behavior conformance**: Core add/get/list/search/update/delete/forget flows verified 10/10 against a live Letta Docker server via [memsdk-e2e](https://github.com/wazootech/memsdk-e2e)
+- **Optional capability**: `uploadFile` (verified passing with inline `embedding_config`), `listProcessing` (returns empty), `asResponse()`/`withResponse()` (not implemented)
 
 ## License
 
