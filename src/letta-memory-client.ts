@@ -234,11 +234,7 @@ class LettaDocumentsAdapter {
           })) as Promise<DocumentUploadFileResponse>
         },
         (err) => {
-          throw new Error(
-            `File upload requires an embedding model configured on the Letta server. ` +
-            `Create a folder with an embedding model or set an embedding on the server. ` +
-            `Server error: ${(err as Error).message}`
-          )
+          throw new Error(`File upload failed: ${(err as Error).message}`)
         },
       ),
     )
