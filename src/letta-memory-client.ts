@@ -225,15 +225,23 @@ class LettaDocumentsAdapter {
   }
 
   uploadFile(body: DocumentUploadFileParams, _opts?: RequestOptions): APIPromise<DocumentUploadFileResponse> {
-    const tag = body.containerTag ?? "default"
     return wrap(
-      this.cache.resolveFolderId().then((folderId) => {
-        const file = uploadableToLetta(body.file)
-        return this.letta.folders.files.upload(folderId, { file }).then((result) => ({
-          id: result.id ?? "file_uploaded",
-          status: "queued",
-        })) as Promise<DocumentUploadFileResponse>
-      }),
+      this.cache.resolveFolderId().then(
+        (folderId) => {
+          const file = uploadableToLetta(body.file)
+          return this.letta.folders.files.upload(folderId, { file }).then((result) => ({
+            id: result.id ?? "file_uploaded",
+            status: "queued",
+          })) as Promise<DocumentUploadFileResponse>
+        },
+        (err) => {
+          throw new Error(
+            `File upload requires an embedding model configured on the Letta server. ` +
+            `Create a folder with an embedding model or set an embedding on the server. ` +
+            `Server error: ${(err as Error).message}`
+          )
+        },
+      ),
     )
   }
 }

@@ -36,10 +36,7 @@ export class AgentCache {
 
   async resolveFolderId(): Promise<string> {
     if (this.folderId !== null) return this.folderId
-    const folder = await this.letta.folders.create({
-      name: "memsdk-uploads",
-      embedding: "text-embedding-ada-002",
-    })
+    const folder = await this.letta.folders.create({ name: "memsdk-uploads" })
     this.folderId = folder.id!
     return this.folderId
   }
