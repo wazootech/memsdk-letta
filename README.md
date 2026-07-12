@@ -4,6 +4,41 @@ Letta-backed implementation of the [memsdk](https://github.com/wazootech/memsdk)
 
 This adapter proves that the [`SupermemoryInterface`](https://github.com/wazootech/memsdk) can be implemented by a non-Supermemory backend (Letta) without introducing a translation-layer API for callers.
 
+## Installation
+
+`memsdk-letta` is distributed directly from GitHub. It is not currently
+published to the npm registry.
+
+Install with any npm-compatible package manager:
+
+```sh
+npm install github:wazootech/memsdk-letta
+pnpm add github:wazootech/memsdk-letta
+yarn add github:wazootech/memsdk-letta
+bun add github:wazootech/memsdk-letta
+```
+
+For reproducible installs, pin to a tag or commit:
+
+```sh
+npm install github:wazootech/memsdk-letta#<tag-or-commit>
+```
+
+The adapter depends on `memsdk` via GitHub as well. During installation, both
+packages build from source via `prepare` and expose compiled ESM entrypoints and
+TypeScript declarations from `dist`.
+
+### Runtime support
+
+| Runtime | Status | Installation path |
+| --- | --- | --- |
+| Node.js | Supported | `npm install github:wazootech/memsdk-letta` |
+| pnpm/yarn projects | Supported | `pnpm add github:wazootech/memsdk-letta` or `yarn add github:wazootech/memsdk-letta` |
+| Bun | Supported | `bun add github:wazootech/memsdk-letta` |
+| Vite/browser apps | Not first-class | This adapter talks to a Letta server and depends on the Letta SDK; use server-side unless you have validated browser bundling for your app |
+| Deno | Not first-class yet | Use through npm/package-manager compatibility where available; direct URL imports are not documented yet |
+| Browser/CDN | Not first-class yet | Requires a published package, release artifact, or committed browser build |
+
 ## Usage
 
 ```typescript
