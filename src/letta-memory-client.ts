@@ -52,7 +52,13 @@ function reject<T>(msg: string): APIPromise<T> {
 }
 
 function passageToDocumentListMemory(
-  passage: { id?: string; text: string; created_at?: string | null; updated_at?: string | null; tags?: Array<string> | null },
+  passage: {
+    id?: string
+    text: string
+    created_at?: string | null
+    updated_at?: string | null
+    tags?: Array<string> | null
+  },
   containerTag: string,
 ): DocumentListMemory {
   return {
@@ -73,7 +79,13 @@ function passageToDocumentListMemory(
 }
 
 function passageToDocumentGetResponse(
-  passage: { id?: string; text: string; created_at?: string | null; updated_at?: string | null; tags?: Array<string> | null },
+  passage: {
+    id?: string
+    text: string
+    created_at?: string | null
+    updated_at?: string | null
+    tags?: Array<string> | null
+  },
   containerTag: string,
 ): DocumentGetResponse {
   return {
@@ -121,7 +133,10 @@ class LettaDocumentsAdapter {
     private readonly letta: Letta,
   ) {}
 
-  add(body: DocumentAddParams, _opts?: RequestOptions): APIPromise<DocumentAddResponse> {
+  add(
+    body: DocumentAddParams,
+    _opts?: RequestOptions,
+  ): APIPromise<DocumentAddResponse> {
     return this.client.add(body, _opts) as APIPromise<DocumentAddResponse>
   }
 
@@ -138,7 +153,10 @@ class LettaDocumentsAdapter {
     )
   }
 
-  list(body: DocumentListParams, _opts?: RequestOptions): APIPromise<DocumentListResponse> {
+  list(
+    body: DocumentListParams,
+    _opts?: RequestOptions,
+  ): APIPromise<DocumentListResponse> {
     const tag = body.containerTags?.[0] ?? "default"
     return wrap(
       this.cache.resolveAgentId(tag).then((agentId) =>
@@ -158,7 +176,11 @@ class LettaDocumentsAdapter {
     )
   }
 
-  update(id: string, body: DocumentUpdateParams, _opts?: RequestOptions): APIPromise<DocumentUpdateResponse> {
+  update(
+    id: string,
+    body: DocumentUpdateParams,
+    _opts?: RequestOptions,
+  ): APIPromise<DocumentUpdateResponse> {
     const agentId = this.cache.getAgentIdForPassage(id)
     if (!agentId) return reject(`Unknown passage: ${id}`)
     return wrap(
@@ -182,17 +204,23 @@ class LettaDocumentsAdapter {
   delete(id: string, _opts?: RequestOptions): APIPromise<void> {
     const agentId = this.cache.getAgentIdForPassage(id)
     if (!agentId) return reject(`Unknown passage: ${id}`)
-    return this.letta.agents.passages.delete(id, { agent_id: agentId }) as APIPromise<void>
+    return this.letta.agents.passages.delete(id, {
+      agent_id: agentId,
+    }) as APIPromise<void>
   }
 
-  batchAdd(body: DocumentBatchAddParams, _opts?: RequestOptions): APIPromise<DocumentBatchAddResponse> {
+  batchAdd(
+    body: DocumentBatchAddParams,
+    _opts?: RequestOptions,
+  ): APIPromise<DocumentBatchAddResponse> {
     const docs = body.documents
     const addPromises = docs.map((doc) => {
-      const params: AddParams = typeof doc === "string" ? { content: doc } : (doc as AddParams)
+      const params: AddParams =
+        typeof doc === "string" ? { content: doc } : (doc as AddParams)
       return this.client
         .add(params)
-        .then((r) => ({ id: r.id, status: r.status } as const))
-        .catch((err: Error) => ({ error: err.message } as const))
+        .then((r) => ({ id: r.id, status: r.status }) as const)
+        .catch((err: Error) => ({ error: err.message }) as const)
     })
     return wrap(
       Promise.all(addPromises).then((results) => {
@@ -200,7 +228,9 @@ class LettaDocumentsAdapter {
         return {
           failed: errors.length,
           results: results.map((r) =>
-            "status" in r ? { id: r.id, status: r.status } : { id: "", status: "error", error: r.error },
+            "status" in r
+              ? { id: r.id, status: r.status }
+              : { id: "", status: "error", error: r.error },
           ),
           success: results.length - errors.length,
         } as DocumentBatchAddResponse
@@ -208,7 +238,10 @@ class LettaDocumentsAdapter {
     )
   }
 
-  deleteBulk(body: DocumentDeleteBulkParams, _opts?: RequestOptions): APIPromise<DocumentDeleteBulkResponse> {
+  deleteBulk(
+    body: DocumentDeleteBulkParams,
+    _opts?: RequestOptions,
+  ): APIPromise<DocumentDeleteBulkResponse> {
     const ids = body.ids ?? []
     const deletePromises = ids.map((id) =>
       this.delete(id)
@@ -223,7 +256,11 @@ class LettaDocumentsAdapter {
           if (r === "fulfilled") successCount++
           else errors.push({ id: r.id, error: r.error })
         }
-        return { deletedCount: successCount, success: errors.length === 0, errors } as DocumentDeleteBulkResponse
+        return {
+          deletedCount: successCount,
+          success: errors.length === 0,
+          errors,
+        } as DocumentDeleteBulkResponse
       }),
     )
   }
@@ -232,7 +269,10 @@ class LettaDocumentsAdapter {
     return wrap(Promise.resolve({ documents: [], totalCount: 0 }))
   }
 
-  uploadFile(body: DocumentUploadFileParams, _opts?: RequestOptions): APIPromise<DocumentUploadFileResponse> {
+  uploadFile(
+    body: DocumentUploadFileParams,
+    _opts?: RequestOptions,
+  ): APIPromise<DocumentUploadFileResponse> {
     return wrap(
       this.cache.resolveFolderId().then(
         (folderId) => {
@@ -256,47 +296,62 @@ class LettaSearchAdapter {
     private readonly letta: Letta,
   ) {}
 
-  documents(body: SearchDocumentsParams, _opts?: RequestOptions): APIPromise<SearchDocumentsResponse> {
+  documents(
+    body: SearchDocumentsParams,
+    _opts?: RequestOptions,
+  ): APIPromise<SearchDocumentsResponse> {
     const tag = body.containerTag ?? body.containerTags?.[0] ?? "default"
     return wrap(
       this.cache.resolveAgentId(tag).then((agentId) =>
-        this.letta.agents.passages.search(agentId, { query: body.q, top_k: 10 }).then((result) => ({
-          results: result.results.map((r: SearchResultItem) => ({
-            chunks: [{ content: r.content, isRelevant: true, score: r.score ?? 0 }],
-            createdAt: r.timestamp,
-            documentId: r.id,
-            metadata: r.metadata ?? null,
-            score: r.score ?? 0,
-            title: null,
-            type: null,
-            updatedAt: "",
+        this.letta.agents.passages
+          .search(agentId, { query: body.q, top_k: 10 })
+          .then((result) => ({
+            results: result.results.map((r: SearchResultItem) => ({
+              chunks: [{ content: r.content, isRelevant: true, score: r.score ?? 0 }],
+              createdAt: r.timestamp,
+              documentId: r.id,
+              metadata: r.metadata ?? null,
+              score: r.score ?? 0,
+              title: null,
+              type: null,
+              updatedAt: "",
+            })),
+            timing: 0,
+            total: result.count,
           })),
-          timing: 0,
-          total: result.count,
-        })),
       ),
     )
   }
 
-  execute(body: SearchExecuteParams, _opts?: RequestOptions): APIPromise<SearchExecuteResponse> {
+  execute(
+    body: SearchExecuteParams,
+    _opts?: RequestOptions,
+  ): APIPromise<SearchExecuteResponse> {
     return this.documents(body, _opts) as APIPromise<SearchExecuteResponse>
   }
 
-  memories(body: SearchMemoriesParams, _opts?: RequestOptions): APIPromise<SearchMemoriesResponse> {
+  memories(
+    body: SearchMemoriesParams,
+    _opts?: RequestOptions,
+  ): APIPromise<SearchMemoriesResponse> {
     const tag = body.containerTag ?? "default"
     return wrap(
       this.cache.resolveAgentId(tag).then((agentId) =>
-        this.letta.agents.passages.search(agentId, { query: body.q, top_k: 10 }).then((result) => {
-          const results: SearchMemoryResult[] = result.results.map((r: SearchResultItem) => ({
-            id: r.id,
-            metadata: r.metadata ?? null,
-            similarity: r.score ?? 0,
-            updatedAt: "",
-            memory: r.content,
-            chunk: r.content,
-          }))
-          return { results, timing: 0, total: result.count } as SearchMemoriesResponse
-        }),
+        this.letta.agents.passages
+          .search(agentId, { query: body.q, top_k: 10 })
+          .then((result) => {
+            const results: SearchMemoryResult[] = result.results.map(
+              (r: SearchResultItem) => ({
+                id: r.id,
+                metadata: r.metadata ?? null,
+                similarity: r.score ?? 0,
+                updatedAt: "",
+                memory: r.content,
+                chunk: r.content,
+              }),
+            )
+            return { results, timing: 0, total: result.count } as SearchMemoriesResponse
+          }),
       ),
     )
   }
@@ -308,24 +363,40 @@ class LettaMemoriesAdapter {
     private readonly letta: Letta,
   ) {}
 
-  forget(body: MemoryForgetParams, _opts?: RequestOptions): APIPromise<MemoryForgetResponse> {
+  forget(
+    body: MemoryForgetParams,
+    _opts?: RequestOptions,
+  ): APIPromise<MemoryForgetResponse> {
     if (!body.id) return reject("id is required for memories.forget")
     const agentId = this.cache.getAgentIdForPassage(body.id)
     if (!agentId) return reject(`Unknown passage: ${body.id}`)
     return this.letta.agents.passages
       .delete(body.id, { agent_id: agentId })
-      .then(() => ({ id: body.id!, forgotten: true })) as APIPromise<MemoryForgetResponse>
+      .then(() => ({
+        id: body.id!,
+        forgotten: true,
+      })) as APIPromise<MemoryForgetResponse>
   }
 
-  updateMemory(body: MemoryUpdateMemoryParams, _opts?: RequestOptions): APIPromise<MemoryUpdateMemoryResponse> {
+  updateMemory(
+    body: MemoryUpdateMemoryParams,
+    _opts?: RequestOptions,
+  ): APIPromise<MemoryUpdateMemoryResponse> {
     return this.cache.resolveAgentId(body.containerTag).then((agentId) =>
       this.letta.agents.blocks.list(agentId, {}).then((page) => {
         const blocks: Array<{ id: string; label?: string | null; value: string }> =
-          (page as { data?: Array<{ id: string; label?: string | null; value: string }> }).data ?? []
+          (
+            page as {
+              data?: Array<{ id: string; label?: string | null; value: string }>
+            }
+          ).data ?? []
         const target = blocks.find((b) => b.label === "human") ?? blocks[0]
         if (!target) throw new Error("No blocks found on agent — cannot update memory")
         return this.letta.agents.blocks
-          .update(target.label ?? target.id, { agent_id: agentId, value: body.newContent })
+          .update(target.label ?? target.id, {
+            agent_id: agentId,
+            value: body.newContent,
+          })
           .then((result) => ({
             id: result.id,
             createdAt: new Date().toISOString(),
@@ -361,12 +432,14 @@ export class LettaMemoryClient {
     const tag = body.containerTag ?? body.containerTags?.[0] ?? "default"
     return wrap(
       this.cache.resolveAgentId(tag).then((agentId) =>
-        this.letta.agents.passages.create(agentId, { text: body.content, tags: [tag] }).then((result) => {
-          const passage = result[0]!
-          if (!passage.id) throw new Error("Server returned a passage without an id")
-          this.cache.recordPassage(passage.id, agentId)
-          return { id: passage.id, status: "queued" } as AddResponse
-        }),
+        this.letta.agents.passages
+          .create(agentId, { text: body.content, tags: [tag] })
+          .then((result) => {
+            const passage = result[0]!
+            if (!passage.id) throw new Error("Server returned a passage without an id")
+            this.cache.recordPassage(passage.id, agentId)
+            return { id: passage.id, status: "queued" } as AddResponse
+          }),
       ),
     )
   }
@@ -376,7 +449,8 @@ export class LettaMemoryClient {
       this.cache.resolveAgentId(body.containerTag).then((agentId) =>
         this.letta.agents.blocks.list(agentId, {}).then((page) => {
           const blocks: Array<{ label?: string | null; value: string }> =
-            (page as { data?: Array<{ label?: string | null; value: string }> }).data ?? []
+            (page as { data?: Array<{ label?: string | null; value: string }> }).data ??
+            []
           const entries = blocks.map((b) => `${b.label ?? "block"}: ${b.value}`)
           return { profile: { dynamic: entries, static: [] } } as ProfileResponse
         }),

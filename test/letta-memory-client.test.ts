@@ -8,7 +8,9 @@ const mockPassageDelete = vi.fn()
 const mockPassageSearch = vi.fn()
 const mockBlockList = vi.fn()
 const mockBlockUpdate = vi.fn()
-const mockFolderCreate = vi.fn().mockResolvedValue({ id: "folder_1", name: "memsdk-uploads" })
+const mockFolderCreate = vi
+  .fn()
+  .mockResolvedValue({ id: "folder_1", name: "memsdk-uploads" })
 const mockFileUpload = vi.fn()
 
 vi.mock("@letta-ai/letta-client", () => ({
@@ -61,10 +63,11 @@ beforeEach(() => {
 })
 
 describe("LettaMemoryClient", () => {
-
   describe("add", () => {
     it("creates a passage via agent", async () => {
-      mockPassageCreate.mockResolvedValue([mockPassage("passage_1", "Dhravya likes ML", ["user_123"])])
+      mockPassageCreate.mockResolvedValue([
+        mockPassage("passage_1", "Dhravya likes ML", ["user_123"]),
+      ])
 
       const client = makeClient()
       const result = await client.add({
@@ -73,10 +76,10 @@ describe("LettaMemoryClient", () => {
       })
 
       expect(result).toEqual({ id: "passage_1", status: "queued" })
-      expect(mockPassageCreate).toHaveBeenCalledWith(
-        expect.any(String),
-        { text: "Dhravya likes ML", tags: ["user_123"] },
-      )
+      expect(mockPassageCreate).toHaveBeenCalledWith(expect.any(String), {
+        text: "Dhravya likes ML",
+        tags: ["user_123"],
+      })
     })
 
     it("uses default containerTag when none provided", async () => {
@@ -96,7 +99,10 @@ describe("LettaMemoryClient", () => {
   describe("profile", () => {
     it("returns aggregated block profile", async () => {
       mockBlockList.mockResolvedValue({
-        data: [mockBlock("b1", "human", "Sarah"), mockBlock("b2", "persona", "Friendly")],
+        data: [
+          mockBlock("b1", "human", "Sarah"),
+          mockBlock("b2", "persona", "Friendly"),
+        ],
       })
 
       const client = makeClient()
@@ -119,9 +125,7 @@ describe("LettaMemoryClient", () => {
 
   describe("documents.list", () => {
     it("lists passages for a containerTag", async () => {
-      mockPassageList.mockResolvedValue([
-        mockPassage("p1", "Memory one", ["user_123"]),
-      ])
+      mockPassageList.mockResolvedValue([mockPassage("p1", "Memory one", ["user_123"])])
 
       const client = makeClient()
       const result = await client.documents.list({ containerTags: ["user_123"] })
@@ -147,7 +151,9 @@ describe("LettaMemoryClient", () => {
 
     it("throws for unknown passage", async () => {
       const client = makeClient()
-      await expect(client.documents.get("unknown")).rejects.toThrow("Unknown passage: unknown")
+      await expect(client.documents.get("unknown")).rejects.toThrow(
+        "Unknown passage: unknown",
+      )
     })
   })
 
@@ -160,7 +166,9 @@ describe("LettaMemoryClient", () => {
       await client.add({ content: "x", containerTag: "user_123" })
 
       await client.documents.delete("p1")
-      expect(mockPassageDelete).toHaveBeenCalledWith("p1", { agent_id: expect.any(String) })
+      expect(mockPassageDelete).toHaveBeenCalledWith("p1", {
+        agent_id: expect.any(String),
+      })
     })
   })
 
@@ -168,7 +176,9 @@ describe("LettaMemoryClient", () => {
     it("deletes and recreates a passage", async () => {
       mockPassageCreate.mockResolvedValueOnce([mockPassage("p1", "old", ["user_123"])])
       mockPassageDelete.mockResolvedValue(undefined)
-      mockPassageCreate.mockResolvedValueOnce([mockPassage("p2", "new content", ["user_123"])])
+      mockPassageCreate.mockResolvedValueOnce([
+        mockPassage("p2", "new content", ["user_123"]),
+      ])
 
       const client = makeClient()
       await client.add({ content: "old", containerTag: "user_123" })
@@ -180,7 +190,9 @@ describe("LettaMemoryClient", () => {
 
       expect(result.status).toBe("queued")
       expect(result.id).toBe("p2")
-      expect(mockPassageDelete).toHaveBeenCalledWith("p1", { agent_id: expect.any(String) })
+      expect(mockPassageDelete).toHaveBeenCalledWith("p1", {
+        agent_id: expect.any(String),
+      })
       expect(mockPassageCreate).toHaveBeenCalledTimes(2)
     })
   })
@@ -343,10 +355,10 @@ describe("LettaMemoryClient", () => {
 
       expect(result.memory).toBe("updated memory")
       expect(result.version).toBe(1)
-      expect(mockBlockUpdate).toHaveBeenCalledWith(
-        "human",
-        { agent_id: expect.any(String), value: "updated memory" },
-      )
+      expect(mockBlockUpdate).toHaveBeenCalledWith("human", {
+        agent_id: expect.any(String),
+        value: "updated memory",
+      })
     })
 
     it("falls back to first block when no human label", async () => {
@@ -362,10 +374,10 @@ describe("LettaMemoryClient", () => {
         newContent: "updated",
       })
 
-      expect(mockBlockUpdate).toHaveBeenCalledWith(
-        "custom",
-        { agent_id: expect.any(String), value: "updated" },
-      )
+      expect(mockBlockUpdate).toHaveBeenCalledWith("custom", {
+        agent_id: expect.any(String),
+        value: "updated",
+      })
     })
   })
 
@@ -376,9 +388,9 @@ describe("LettaMemoryClient", () => {
       mockAgentCreate.mockRejectedValue(apiError)
 
       const client = makeClient()
-      await expect(
-        client.profile({ containerTag: "nonexistent" }),
-      ).rejects.toThrow("API Error: 404 Not Found")
+      await expect(client.profile({ containerTag: "nonexistent" })).rejects.toThrow(
+        "API Error: 404 Not Found",
+      )
     })
   })
 
