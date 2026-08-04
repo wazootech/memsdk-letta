@@ -33,6 +33,7 @@ import type {
   SearchMemoriesParams,
   SearchMemoriesResponse,
   SearchMemoryResult,
+  SupermemorySearchInterface,
   Uploadable,
 } from "memsdk"
 import { AgentCache } from "./agent-cache.js"
@@ -290,20 +291,18 @@ class LettaDocumentsAdapter {
   }
 }
 
-class LettaSearchAdapter {
-  constructor(
-    private readonly cache: AgentCache,
-    private readonly letta: Letta,
-  ) {}
-
-  documents(
+function createLettaSearchAdapter(
+  cache: AgentCache,
+  letta: Letta,
+): SupermemorySearchInterface {
+  const documents = (
     body: SearchDocumentsParams,
     _opts?: RequestOptions,
-  ): APIPromise<SearchDocumentsResponse> {
+  ): APIPromise<SearchDocumentsResponse> => {
     const tag = body.containerTag ?? body.containerTags?.[0] ?? "default"
     return wrap(
-      this.cache.resolveAgentId(tag).then((agentId) =>
-        this.letta.agents.passages
+      cache.resolveAgentId(tag).then((agentId) =>
+        letta.agents.passages
           .search(agentId, { query: body.q, top_k: 10 })
           .then((result) => ({
             results: result.results.map((r: SearchResultItem) => ({
@@ -323,21 +322,21 @@ class LettaSearchAdapter {
     )
   }
 
-  execute(
+  const execute = (
     body: SearchExecuteParams,
     _opts?: RequestOptions,
-  ): APIPromise<SearchExecuteResponse> {
-    return this.documents(body, _opts) as APIPromise<SearchExecuteResponse>
+  ): APIPromise<SearchExecuteResponse> => {
+    return documents(body, _opts) as APIPromise<SearchExecuteResponse>
   }
 
-  memories(
+  const memories = (
     body: SearchMemoriesParams,
     _opts?: RequestOptions,
-  ): APIPromise<SearchMemoriesResponse> {
+  ): APIPromise<SearchMemoriesResponse> => {
     const tag = body.containerTag ?? "default"
     return wrap(
-      this.cache.resolveAgentId(tag).then((agentId) =>
-        this.letta.agents.passages
+      cache.resolveAgentId(tag).then((agentId) =>
+        letta.agents.passages
           .search(agentId, { query: body.q, top_k: 10 })
           .then((result) => {
             const results: SearchMemoryResult[] = result.results.map(
@@ -355,6 +354,13 @@ class LettaSearchAdapter {
       ),
     )
   }
+
+  const search = (
+    body: SearchMemoriesParams,
+    _opts?: RequestOptions,
+  ): APIPromise<SearchMemoriesResponse> => memories(body, _opts)
+
+  return Object.assign(search, { documents, execute, memories })
 }
 
 class LettaMemoriesAdapter {
@@ -414,7 +420,7 @@ class LettaMemoriesAdapter {
 
 export class LettaMemoryClient {
   readonly documents: LettaDocumentsAdapter
-  readonly search: LettaSearchAdapter
+  readonly search: SupermemorySearchInterface
   readonly memories: LettaMemoriesAdapter
 
   private readonly cache: AgentCache
@@ -424,7 +430,7 @@ export class LettaMemoryClient {
     this.letta = new Letta({ baseURL: options.baseUrl, apiKey: options.apiKey })
     this.cache = new AgentCache(this.letta, options.model)
     this.documents = new LettaDocumentsAdapter(this, this.cache, this.letta)
-    this.search = new LettaSearchAdapter(this.cache, this.letta)
+    this.search = createLettaSearchAdapter(this.cache, this.letta)
     this.memories = new LettaMemoriesAdapter(this.cache, this.letta)
   }
 
