@@ -314,6 +314,30 @@ describe("LettaMemoryClient", () => {
     })
   })
 
+  describe("search (callable)", () => {
+    it("is callable and returns memory-shaped results", async () => {
+      mockPassageSearch.mockResolvedValue({
+        results: [{ id: "p1", content: "callable result", score: 0.9, timestamp: "" }],
+        count: 1,
+      })
+
+      const client = makeClient()
+      const result = await client.search({
+        q: "callable",
+        containerTag: "user_123",
+        searchMode: "hybrid",
+      })
+
+      expect(result.total).toBe(1)
+      expect(result.results[0]?.memory).toBe("callable result")
+      expect(result.results[0]?.similarity).toBe(0.9)
+      expect(mockPassageSearch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ query: "callable", top_k: 10 }),
+      )
+    })
+  })
+
   describe("memories.forget", () => {
     it("forgets a passage", async () => {
       mockPassageCreate.mockResolvedValue([mockPassage("p1", "x", ["user_123"])])
