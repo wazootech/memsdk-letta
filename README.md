@@ -73,8 +73,8 @@ For direct access to the underlying class, import `LettaMemoryClient` and constr
 | Supermemory concept                | Letta SDK implementation                                                                             |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `containerTag`                     | Letta agent (one agent per tag, created via `letta.agents.create`)                                   |
-| `client.add()` / `documents.add()` | `letta.agents.passages.create(agentId, { text, tags })`                                              |
-| `client.profile()`                 | `letta.agents.blocks.list(agentId, {})` — aggregated block labels + values                           |
+| `memory.add()` / `documents.add()` | `letta.agents.passages.create(agentId, { text, tags })`                                              |
+| `memory.profile()`                 | `letta.agents.blocks.list(agentId, {})` — aggregated block labels + values                           |
 | `documents.get()`                  | `letta.agents.passages.list(agentId, {})` — find by id                                               |
 | `documents.list()`                 | `letta.agents.passages.list(agentId, {})`                                                            |
 | `documents.update()`               | `letta.agents.passages.delete()` + `letta.agents.passages.create()`                                  |
