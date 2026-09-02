@@ -45,25 +45,28 @@ declarations from `dist`.
 ## Usage
 
 ```typescript
-import { LettaMemoryClient } from "memsdk-letta"
+import { createSupermemory } from "memsdk-letta"
 
-const client = new LettaMemoryClient({
+const memory = createSupermemory({
   baseUrl: "http://localhost:8283", // your Letta server URL
   apiKey: "sk-your-api-key",
 })
 
 // All SupermemoryInterface methods are available:
-await client.add({
+await memory.add({
   content: "Dhravya prefers ML over traditional programming.",
   containerTag: "user_123",
 })
 
-const profile = await client.profile({ containerTag: "user_123" })
+const profile = await memory.profile({ containerTag: "user_123" })
 
-const docs = await client.documents.list({ containerTags: ["user_123"] })
+const docs = await memory.documents.list({ containerTags: ["user_123"] })
 
-const results = await client.search.documents({ q: "ML", containerTag: "user_123" })
+const results = await memory.search.documents({ q: "ML", containerTag: "user_123" })
 ```
+
+For direct access to the underlying class, import `LettaMemoryClient` and construct with
+`new`.
 
 ## Mapping
 

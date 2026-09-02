@@ -1,2 +1,2 @@
-export { LettaMemoryClient } from "./letta-memory-client.js"
+export { createSupermemory, LettaMemoryClient } from "./letta-memory-client.js"
 export type { LettaMemoryClientOptions } from "./letta-memory-client.js"
