@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { LettaMemoryClient } from "../src/index.ts"
+import { createSupermemory, LettaMemoryClient } from "../src/index.ts"
 
 describe("memsdk-letta exports", () => {
   it("exposes LettaMemoryClient class", () => {
@@ -24,5 +24,15 @@ describe("memsdk-letta exports", () => {
     expect(typeof client.search.memories).toBe("function")
     expect(typeof client.memories.forget).toBe("function")
     expect(typeof client.memories.updateMemory).toBe("function")
+  })
+
+  it("exposes a createSupermemory factory returning a SupermemoryInterface", () => {
+    const client = createSupermemory({
+      baseUrl: "http://localhost:8283",
+      apiKey: "test-key",
+    })
+    expect(client).toBeInstanceOf(LettaMemoryClient)
+    expect(typeof client.add).toBe("function")
+    expect(typeof client.profile).toBe("function")
   })
 })

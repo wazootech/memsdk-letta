@@ -33,6 +33,7 @@ import type {
   SearchMemoriesParams,
   SearchMemoriesResponse,
   SearchMemoryResult,
+  SupermemoryInterface,
   SupermemorySearchInterface,
   Uploadable,
 } from "memsdk"
@@ -463,4 +464,10 @@ export class LettaMemoryClient {
       ),
     )
   }
+}
+
+export function createSupermemory(
+  options: LettaMemoryClientOptions,
+): SupermemoryInterface {
+  return new LettaMemoryClient(options)
 }

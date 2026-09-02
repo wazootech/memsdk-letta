@@ -1,4 +1,5 @@
 import type { SupermemoryInterface } from "memsdk"
+import { createSupermemory } from "../src/index.ts"
 import type { LettaMemoryClient } from "../src/index.ts"
 
 type Assert<T extends true> = T
@@ -9,6 +10,14 @@ type _LettaSatisfiesSupermemory = Assert<
 >
 
 declare const client: LettaMemoryClient
+
+const factoryClient = createSupermemory({
+  baseUrl: "http://localhost:8283",
+  apiKey: "test-key",
+})
+type _FactoryReturnSatisfiesSupermemory = Assert<
+  Extends<typeof factoryClient, SupermemoryInterface>
+>
 
 await client.add({ content: "hello" })
 await client.profile({ containerTag: "user_123" })
