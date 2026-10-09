@@ -3,39 +3,37 @@ import type {
   AddParams,
   AddResponse,
   APIPromise,
-  DocumentAddParams,
-  DocumentAddResponse,
+  ChunkRecord,
   DocumentBatchAddParams,
   DocumentBatchAddResponse,
-  DocumentDeleteBulkParams,
-  DocumentDeleteBulkResponse,
+  DocumentDeleteParams,
+  DocumentDeleteResponse,
+  DocumentFileResponse,
+  DocumentGetParams,
   DocumentGetResponse,
-  DocumentListMemory,
-  DocumentListParams,
-  DocumentListProcessingResponse,
-  DocumentListResponse,
-  DocumentType,
+  DocumentInclude,
   DocumentUpdateParams,
   DocumentUpdateResponse,
   DocumentUploadFileParams,
-  DocumentUploadFileResponse,
+  ListDocument,
+  ListParams,
+  ListResponse,
+  ListType,
+  MemoryForgetMatchingParams,
   MemoryForgetParams,
   MemoryForgetResponse,
-  MemoryUpdateMemoryParams,
-  MemoryUpdateMemoryResponse,
+  MemoryGetParams,
+  MemoryGetResponse,
+  MemoryRecord,
   ProfileParams,
   ProfileResponse,
   RequestOptions,
-  SearchDocumentsParams,
-  SearchDocumentsResponse,
-  SearchExecuteParams,
-  SearchExecuteResponse,
-  SearchMemoriesParams,
-  SearchMemoriesResponse,
-  SearchMemoryResult,
+  SearchParams,
+  SearchResponse,
+  SearchResult,
   SupermemoryInterface,
-  SupermemorySearchInterface,
   Uploadable,
+  UploadableFileLike,
 } from "memsdk"
 import { AgentCache } from "./agent-cache.js"
 
@@ -43,6 +41,13 @@ export interface LettaMemoryClientOptions {
   baseUrl: string
   apiKey: string
   model?: string
+}
+
+interface LettaPassage {
+  id?: string
+  text: string
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 function wrap<T>(p: Promise<T>): APIPromise<T> {
@@ -53,375 +58,51 @@ function reject<T>(msg: string): APIPromise<T> {
   return Promise.reject(new Error(msg)) as APIPromise<T>
 }
 
-function passageToDocumentListMemory(
-  passage: {
-    id?: string
-    text: string
-    created_at?: string | null
-    updated_at?: string | null
-    tags?: Array<string> | null
-  },
-  containerTag: string,
-): DocumentListMemory {
+function timestamps(passage: LettaPassage) {
+  const createdAt = passage.created_at ?? new Date().toISOString()
+  return { createdAt, updatedAt: passage.updated_at ?? createdAt }
+}
+
+function includes<T extends string>(include: T | Array<T> | undefined, value: T) {
+  return include === value || (Array.isArray(include) && include.includes(value))
+}
+
+function paginate<T>(items: Array<T>, page = 1, limit = 10) {
   return {
-    id: passage.id ?? "",
-    connectionId: null,
-    createdAt: passage.created_at ?? new Date().toISOString(),
-    customId: null,
-    filepath: null,
-    metadata: null,
-    status: "done",
-    summary: null,
-    title: null,
-    type: "text" as DocumentType,
-    updatedAt: passage.updated_at ?? passage.created_at ?? new Date().toISOString(),
-    content: passage.text,
-    containerTags: [containerTag],
+    items: items.slice((page - 1) * limit, page * limit),
+    pagination: {
+      currentPage: page,
+      limit,
+      totalItems: items.length,
+      totalPages: Math.ceil(items.length / limit),
+    },
   }
 }
 
-function passageToDocumentGetResponse(
-  passage: {
-    id?: string
-    text: string
-    created_at?: string | null
-    updated_at?: string | null
-    tags?: Array<string> | null
-  },
-  containerTag: string,
-): DocumentGetResponse {
-  return {
-    id: passage.id ?? "",
-    connectionId: null,
-    content: passage.text,
-    createdAt: passage.created_at ?? new Date().toISOString(),
-    customId: null,
-    filepath: null,
-    metadata: null,
-    ogImage: null,
-    raw: null,
-    source: null,
-    spatialPoint: null,
-    status: "done",
-    summary: null,
-    taskType: "memory",
-    title: null,
-    type: "text" as DocumentType,
-    updatedAt: passage.updated_at ?? passage.created_at ?? new Date().toISOString(),
-    containerTags: [containerTag],
-  }
-}
-
-function uploadableToLetta(file: Uploadable): LettaUploadable {
+async function fileLikeToLetta(
+  file: UploadableFileLike,
+  filename = "upload.bin",
+): Promise<LettaUploadable> {
   if (file instanceof File) return file
-  if (file instanceof Blob) return new File([file], "upload.bin")
-  if (file instanceof Response) return file.blob() as unknown as LettaUploadable
-  return new File([], "upload.bin")
+  if (file instanceof Blob) return new File([file], filename)
+  if (file instanceof ReadableStream) {
+    return new File([await new Response(file).blob()], filename)
+  }
+  return new File([file as BlobPart], filename)
 }
 
-interface SearchResultItem {
-  id: string
-  content: string
-  timestamp: string
-  tags?: Array<string>
-  score?: number
-  metadata?: Record<string, unknown>
-}
-
-class LettaDocumentsAdapter {
-  constructor(
-    private readonly client: LettaMemoryClient,
-    private readonly cache: AgentCache,
-    private readonly letta: Letta,
-  ) {}
-
-  add(
-    body: DocumentAddParams,
-    _opts?: RequestOptions,
-  ): APIPromise<DocumentAddResponse> {
-    return this.client.add(body, _opts) as APIPromise<DocumentAddResponse>
+async function uploadableToLetta(file: Uploadable): Promise<LettaUploadable> {
+  if (typeof file === "object" && file !== null && "data" in file) {
+    return fileLikeToLetta(file.data, file.filename)
   }
-
-  get(id: string, _opts?: RequestOptions): APIPromise<DocumentGetResponse> {
-    const agentId = this.cache.getAgentIdForPassage(id)
-    if (!agentId) return reject(`Unknown passage: ${id}`)
-    return wrap(
-      this.letta.agents.passages.list(agentId, {}).then((passages) => {
-        const p = passages.find((p) => p.id === id)
-        if (!p) throw new Error(`Passage not found: ${id}`)
-        const tag = this.cache.getTagForAgentId(agentId) ?? "unknown"
-        return passageToDocumentGetResponse(p, tag)
-      }),
-    )
+  if (typeof file === "object" && file !== null && "path" in file) {
+    throw new Error("Path uploads are not supported by the Letta adapter")
   }
-
-  list(
-    body: DocumentListParams,
-    _opts?: RequestOptions,
-  ): APIPromise<DocumentListResponse> {
-    const tag = body.containerTags?.[0] ?? "default"
-    return wrap(
-      this.cache.resolveAgentId(tag).then((agentId) =>
-        this.letta.agents.passages.list(agentId, {}).then((passages) => {
-          const memories = passages.map((p) => passageToDocumentListMemory(p, tag))
-          return {
-            memories,
-            pagination: {
-              currentPage: 1,
-              totalItems: memories.length,
-              totalPages: 1,
-              limit: memories.length,
-            },
-          } as DocumentListResponse
-        }),
-      ),
-    )
-  }
-
-  update(
-    id: string,
-    body: DocumentUpdateParams,
-    _opts?: RequestOptions,
-  ): APIPromise<DocumentUpdateResponse> {
-    const agentId = this.cache.getAgentIdForPassage(id)
-    if (!agentId) return reject(`Unknown passage: ${id}`)
-    return wrap(
-      this.letta.agents.passages
-        .delete(id, { agent_id: agentId })
-        .then(() =>
-          this.letta.agents.passages.create(agentId, {
-            text: body.content ?? "",
-            tags: body.containerTag ? [body.containerTag] : null,
-          }),
-        )
-        .then((result) => {
-          const passage = result[0]!
-          if (!passage.id) throw new Error("Server returned a passage without an id")
-          this.cache.recordPassage(passage.id, agentId)
-          return { id: passage.id, status: "queued" } as DocumentUpdateResponse
-        }),
-    )
-  }
-
-  delete(id: string, _opts?: RequestOptions): APIPromise<void> {
-    const agentId = this.cache.getAgentIdForPassage(id)
-    if (!agentId) return reject(`Unknown passage: ${id}`)
-    return this.letta.agents.passages.delete(id, {
-      agent_id: agentId,
-    }) as APIPromise<void>
-  }
-
-  batchAdd(
-    body: DocumentBatchAddParams,
-    _opts?: RequestOptions,
-  ): APIPromise<DocumentBatchAddResponse> {
-    const docs = body.documents
-    const addPromises = docs.map((doc) => {
-      const params: AddParams =
-        typeof doc === "string" ? { content: doc } : (doc as AddParams)
-      return this.client
-        .add(params)
-        .then((r) => ({ id: r.id, status: r.status }) as const)
-        .catch((err: Error) => ({ error: err.message }) as const)
-    })
-    return wrap(
-      Promise.all(addPromises).then((results) => {
-        const errors = results.filter((r) => "error" in r)
-        return {
-          failed: errors.length,
-          results: results.map((r) =>
-            "status" in r
-              ? { id: r.id, status: r.status }
-              : { id: "", status: "error", error: r.error },
-          ),
-          success: results.length - errors.length,
-        } as DocumentBatchAddResponse
-      }),
-    )
-  }
-
-  deleteBulk(
-    body: DocumentDeleteBulkParams,
-    _opts?: RequestOptions,
-  ): APIPromise<DocumentDeleteBulkResponse> {
-    const ids = body.ids ?? []
-    const deletePromises = ids.map((id) =>
-      this.delete(id)
-        .then(() => "fulfilled" as const)
-        .catch((err: Error) => ({ id, error: err.message }) as const),
-    )
-    return wrap(
-      Promise.all(deletePromises).then((results) => {
-        let successCount = 0
-        const errors: Array<{ id: string; error: string }> = []
-        for (const r of results) {
-          if (r === "fulfilled") successCount++
-          else errors.push({ id: r.id, error: r.error })
-        }
-        return {
-          deletedCount: successCount,
-          success: errors.length === 0,
-          errors,
-        } as DocumentDeleteBulkResponse
-      }),
-    )
-  }
-
-  listProcessing(_opts?: RequestOptions): APIPromise<DocumentListProcessingResponse> {
-    return wrap(Promise.resolve({ documents: [], totalCount: 0 }))
-  }
-
-  uploadFile(
-    body: DocumentUploadFileParams,
-    _opts?: RequestOptions,
-  ): APIPromise<DocumentUploadFileResponse> {
-    return wrap(
-      this.cache.resolveFolderId().then(
-        (folderId) => {
-          const file = uploadableToLetta(body.file)
-          return this.letta.folders.files.upload(folderId, { file }).then((result) => ({
-            id: result.id ?? "file_uploaded",
-            status: "queued",
-          })) as Promise<DocumentUploadFileResponse>
-        },
-        (err) => {
-          throw new Error(`File upload failed: ${(err as Error).message}`)
-        },
-      ),
-    )
-  }
-}
-
-function createLettaSearchAdapter(
-  cache: AgentCache,
-  letta: Letta,
-): SupermemorySearchInterface {
-  const documents = (
-    body: SearchDocumentsParams,
-    _opts?: RequestOptions,
-  ): APIPromise<SearchDocumentsResponse> => {
-    const tag = body.containerTag ?? body.containerTags?.[0] ?? "default"
-    return wrap(
-      cache.resolveAgentId(tag).then((agentId) =>
-        letta.agents.passages
-          .search(agentId, { query: body.q, top_k: 10 })
-          .then((result) => ({
-            results: result.results.map((r: SearchResultItem) => ({
-              chunks: [{ content: r.content, isRelevant: true, score: r.score ?? 0 }],
-              createdAt: r.timestamp,
-              documentId: r.id,
-              metadata: r.metadata ?? null,
-              score: r.score ?? 0,
-              title: null,
-              type: null,
-              updatedAt: "",
-            })),
-            timing: 0,
-            total: result.count,
-          })),
-      ),
-    )
-  }
-
-  const execute = (
-    body: SearchExecuteParams,
-    _opts?: RequestOptions,
-  ): APIPromise<SearchExecuteResponse> => {
-    return documents(body, _opts) as APIPromise<SearchExecuteResponse>
-  }
-
-  const memories = (
-    body: SearchMemoriesParams,
-    _opts?: RequestOptions,
-  ): APIPromise<SearchMemoriesResponse> => {
-    const tag = body.containerTag ?? "default"
-    return wrap(
-      cache.resolveAgentId(tag).then((agentId) =>
-        letta.agents.passages
-          .search(agentId, { query: body.q, top_k: 10 })
-          .then((result) => {
-            const results: SearchMemoryResult[] = result.results.map(
-              (r: SearchResultItem) => ({
-                id: r.id,
-                metadata: r.metadata ?? null,
-                similarity: r.score ?? 0,
-                updatedAt: "",
-                memory: r.content,
-                chunk: r.content,
-              }),
-            )
-            return { results, timing: 0, total: result.count } as SearchMemoriesResponse
-          }),
-      ),
-    )
-  }
-
-  const search = (
-    body: SearchMemoriesParams,
-    _opts?: RequestOptions,
-  ): APIPromise<SearchMemoriesResponse> => memories(body, _opts)
-
-  return Object.assign(search, { documents, execute, memories })
-}
-
-class LettaMemoriesAdapter {
-  constructor(
-    private readonly cache: AgentCache,
-    private readonly letta: Letta,
-  ) {}
-
-  forget(
-    body: MemoryForgetParams,
-    _opts?: RequestOptions,
-  ): APIPromise<MemoryForgetResponse> {
-    if (!body.id) return reject("id is required for memories.forget")
-    const agentId = this.cache.getAgentIdForPassage(body.id)
-    if (!agentId) return reject(`Unknown passage: ${body.id}`)
-    return this.letta.agents.passages
-      .delete(body.id, { agent_id: agentId })
-      .then(() => ({
-        id: body.id!,
-        forgotten: true,
-      })) as APIPromise<MemoryForgetResponse>
-  }
-
-  updateMemory(
-    body: MemoryUpdateMemoryParams,
-    _opts?: RequestOptions,
-  ): APIPromise<MemoryUpdateMemoryResponse> {
-    return this.cache.resolveAgentId(body.containerTag).then((agentId) =>
-      this.letta.agents.blocks.list(agentId, {}).then((page) => {
-        const blocks: Array<{ id: string; label?: string | null; value: string }> =
-          (
-            page as {
-              data?: Array<{ id: string; label?: string | null; value: string }>
-            }
-          ).data ?? []
-        const target = blocks.find((b) => b.label === "human") ?? blocks[0]
-        if (!target) throw new Error("No blocks found on agent — cannot update memory")
-        return this.letta.agents.blocks
-          .update(target.label ?? target.id, {
-            agent_id: agentId,
-            value: body.newContent,
-          })
-          .then((result) => ({
-            id: result.id,
-            createdAt: new Date().toISOString(),
-            forgetAfter: null,
-            forgetReason: null,
-            memory: body.newContent,
-            parentMemoryId: null,
-            rootMemoryId: null,
-            version: 1,
-          }))
-      }),
-    ) as APIPromise<MemoryUpdateMemoryResponse>
-  }
+  return fileLikeToLetta(file)
 }
 
 export class LettaMemoryClient {
   readonly documents: LettaDocumentsAdapter
-  readonly search: SupermemorySearchInterface
   readonly memories: LettaMemoriesAdapter
 
   private readonly cache: AgentCache
@@ -431,37 +112,403 @@ export class LettaMemoryClient {
     this.letta = new Letta({ baseURL: options.baseUrl, apiKey: options.apiKey })
     this.cache = new AgentCache(this.letta, options.model)
     this.documents = new LettaDocumentsAdapter(this, this.cache, this.letta)
-    this.search = createLettaSearchAdapter(this.cache, this.letta)
-    this.memories = new LettaMemoriesAdapter(this.cache, this.letta)
+    this.memories = new LettaMemoriesAdapter(this, this.cache, this.letta)
   }
 
-  add(body: AddParams, _opts?: RequestOptions): APIPromise<AddResponse> {
-    const tag = body.containerTag ?? body.containerTags?.[0] ?? "default"
+  add(
+    namespace: string,
+    request: AddParams,
+    _opts?: RequestOptions,
+  ): APIPromise<AddResponse> {
     return wrap(
-      this.cache.resolveAgentId(tag).then((agentId) =>
+      this.createPassage(namespace, request.content).then((passageId) => {
+        const id = request.id ?? passageId
+        this.cache.bindDocument(id, passageId)
+        return { id, status: "queued" } satisfies AddResponse
+      }),
+    )
+  }
+
+  search(
+    namespace: string,
+    request: SearchParams,
+    _opts?: RequestOptions,
+  ): APIPromise<SearchResponse> {
+    const started = performance.now()
+    return wrap(
+      this.cache.resolveAgentId(namespace).then((agentId) =>
         this.letta.agents.passages
-          .create(agentId, { text: body.content, tags: [tag] })
+          .search(agentId, { query: request.query, top_k: request.limit ?? 10 })
           .then((result) => {
-            const passage = result[0]!
-            if (!passage.id) throw new Error("Server returned a passage without an id")
-            this.cache.recordPassage(passage.id, agentId)
-            return { id: passage.id, status: "queued" } as AddResponse
+            const results = result.results.map((r): SearchResult => {
+              // Letta returns `score` and `metadata` at runtime without declaring them.
+              const extra = r as { score?: number; metadata?: Record<string, unknown> }
+              const text =
+                request.searchMode === "chunks"
+                  ? { chunk: r.content }
+                  : { memory: r.content }
+              return {
+                id: this.cache.documentIdFor(r.id),
+                ...text,
+                metadata: extra.metadata ?? {},
+                similarity: extra.score ?? 0,
+                isLatest: true,
+                isInference: false,
+                system: { updatedAt: r.timestamp },
+              }
+            })
+            return { results, searchTime: performance.now() - started }
           }),
       ),
     )
   }
 
-  profile(body: ProfileParams, _opts?: RequestOptions): APIPromise<ProfileResponse> {
+  profile(
+    namespace: string,
+    _request?: ProfileParams,
+    _opts?: RequestOptions,
+  ): APIPromise<ProfileResponse> {
     return wrap(
-      this.cache.resolveAgentId(body.containerTag).then((agentId) =>
+      this.cache.resolveAgentId(namespace).then((agentId) =>
         this.letta.agents.blocks.list(agentId, {}).then((page) => {
-          const blocks: Array<{ label?: string | null; value: string }> =
-            (page as { data?: Array<{ label?: string | null; value: string }> }).data ??
-            []
-          const entries = blocks.map((b) => `${b.label ?? "block"}: ${b.value}`)
-          return { profile: { dynamic: entries, static: [] } } as ProfileResponse
+          const blocks: Array<{ id: string; label?: string | null; value: string }> =
+            (
+              page as {
+                data?: Array<{ id: string; label?: string | null; value: string }>
+              }
+            ).data ?? []
+          const dynamic = blocks.map((b) => ({
+            id: b.id,
+            memory: `${b.label ?? "block"}: ${b.value}`,
+          }))
+          return { profile: { static: [], dynamic, buckets: {} } }
         }),
       ),
+    )
+  }
+
+  profileMarkdown(
+    namespace: string,
+    request?: ProfileParams,
+    opts?: RequestOptions,
+  ): Promise<string> {
+    return this.profile(namespace, request, opts).then(({ profile }) => {
+      const section = (title: string, items: Array<{ memory: string }>) =>
+        `## ${title}\n\n${items.length ? items.map((i) => `- ${i.memory}`).join("\n") : "_None_"}\n`
+      return [
+        `# Profile: ${namespace}\n`,
+        section("Static", profile.static),
+        section("Dynamic", profile.dynamic),
+      ].join("\n")
+    })
+  }
+
+  list(
+    namespace: string,
+    type: ListType,
+    request?: ListParams,
+    _opts?: RequestOptions,
+  ): APIPromise<ListResponse> {
+    return wrap(
+      this.listPassages(namespace).then((passages) => {
+        const { items, pagination } = paginate(passages, request?.page, request?.limit)
+        return {
+          documents:
+            type === "documents" ? items.map((p) => this.toListDocument(p)) : [],
+          chunks:
+            type === "chunks"
+              ? items.map((p) => ({
+                  ...this.toChunk(p),
+                  documentId: this.documentIdOf(p),
+                }))
+              : [],
+          memories: type === "memories" ? items.map((p) => this.toMemory(p)) : [],
+          pagination,
+        }
+      }),
+    )
+  }
+
+  /** @internal */
+  createPassage(namespace: string, text: string): Promise<string> {
+    return this.cache.resolveAgentId(namespace).then((agentId) =>
+      this.letta.agents.passages
+        .create(agentId, { text, tags: [namespace] })
+        .then((result) => {
+          const passage = result[0]
+          if (!passage?.id) throw new Error("Server returned a passage without an id")
+          this.cache.recordPassage(passage.id, agentId)
+          return passage.id
+        }),
+    )
+  }
+
+  /** @internal */
+  listPassages(namespace: string): Promise<Array<LettaPassage>> {
+    return this.cache
+      .resolveAgentId(namespace)
+      .then((agentId) => this.letta.agents.passages.list(agentId, {}))
+  }
+
+  /** @internal Resolves a document ID to its current backing passage. */
+  findPassage(namespace: string, documentId: string): Promise<LettaPassage> {
+    const passageId = this.cache.passageIdFor(documentId)
+    return this.listPassages(namespace).then((passages) => {
+      const passage = passages.find((p) => p.id === passageId)
+      if (!passage) throw new Error(`Document not found: ${documentId}`)
+      return passage
+    })
+  }
+
+  /** @internal */
+  deletePassage(namespace: string, passageId: string): Promise<void> {
+    return this.cache.resolveAgentId(namespace).then((agentId) =>
+      this.letta.agents.passages
+        .delete(passageId, {
+          agent_id: this.cache.getAgentIdForPassage(passageId) ?? agentId,
+        })
+        .then(() => undefined),
+    )
+  }
+
+  /** @internal */
+  documentIdOf(passage: LettaPassage): string {
+    return this.cache.documentIdFor(passage.id ?? "")
+  }
+
+  /** @internal */
+  toListDocument(passage: LettaPassage): ListDocument {
+    return {
+      id: this.documentIdOf(passage),
+      title: null,
+      type: "text",
+      summary: null,
+      metadata: {},
+      url: null,
+      system: { ...timestamps(passage), status: "done" },
+    }
+  }
+
+  /** @internal */
+  toChunk(passage: LettaPassage): ChunkRecord {
+    return {
+      id: passage.id ?? "",
+      position: 0,
+      content: passage.text,
+      type: "text",
+      metadata: {},
+      system: { createdAt: timestamps(passage).createdAt },
+    }
+  }
+
+  /** @internal */
+  toMemory(passage: LettaPassage): MemoryRecord {
+    return {
+      id: this.documentIdOf(passage),
+      memory: passage.text,
+      metadata: {},
+      isStatic: false,
+      isInference: false,
+      isLatest: true,
+      isForgotten: false,
+      version: 1,
+      system: timestamps(passage),
+    }
+  }
+}
+
+class LettaDocumentsAdapter {
+  constructor(
+    private readonly client: LettaMemoryClient,
+    private readonly cache: AgentCache,
+    private readonly letta: Letta,
+  ) {}
+
+  get(
+    namespace: string,
+    id: string,
+    request?: DocumentGetParams,
+    _opts?: RequestOptions,
+  ): APIPromise<DocumentGetResponse> {
+    const include = request?.include as
+      DocumentInclude | Array<DocumentInclude> | undefined
+    return wrap(
+      this.client.findPassage(namespace, id).then((passage) => ({
+        id,
+        title: null,
+        type: "text",
+        summary: null,
+        content: passage.text,
+        metadata: {},
+        system: { ...timestamps(passage), status: "done" as const },
+        ...(includes(include, "chunks")
+          ? { chunks: [this.client.toChunk(passage)] }
+          : {}),
+        ...(includes(include, "memories")
+          ? { memories: [{ ...this.client.toMemory(passage), id }] }
+          : {}),
+      })),
+    )
+  }
+
+  update(
+    namespace: string,
+    id: string,
+    request?: DocumentUpdateParams,
+    _opts?: RequestOptions,
+  ): APIPromise<DocumentUpdateResponse> {
+    const content = request?.content
+    if (content === undefined) {
+      return wrap(
+        this.client.findPassage(namespace, id).then(() => ({ id, status: "done" })),
+      )
+    }
+    // Letta passages are immutable: replace the backing passage, keep the document ID.
+    return wrap(
+      this.client
+        .findPassage(namespace, id)
+        .then((old) =>
+          this.client
+            .createPassage(namespace, content)
+            .then((passageId) =>
+              this.client.deletePassage(namespace, old.id!).then(() => passageId),
+            ),
+        )
+        .then((passageId) => {
+          this.cache.bindDocument(id, passageId)
+          return { id, status: "queued" as const }
+        }),
+    )
+  }
+
+  delete(
+    namespace: string,
+    request: DocumentDeleteParams,
+    _opts?: RequestOptions,
+  ): APIPromise<DocumentDeleteResponse> {
+    return wrap(
+      Promise.all(
+        request.ids.map((id) =>
+          this.client
+            .deletePassage(namespace, this.cache.passageIdFor(id))
+            .then(() => {
+              this.cache.unbindDocument(id)
+              return null
+            })
+            .catch((err: Error) => ({ id, error: err.message })),
+        ),
+      ).then((results) => {
+        const errors = results.filter((r) => r !== null)
+        return { count: results.length - errors.length, errors }
+      }),
+    )
+  }
+
+  batchAdd(
+    namespace: string,
+    request: DocumentBatchAddParams,
+    _opts?: RequestOptions,
+  ): APIPromise<DocumentBatchAddResponse> {
+    return wrap(
+      Promise.all(
+        request.documents.map((doc) => {
+          const params: AddParams = { content: doc.content }
+          if (doc.id !== undefined) params.id = doc.id
+          return this.client
+            .add(namespace, params)
+            .then((r) => ({ id: r.id, status: r.status }))
+            .catch((err: Error) => ({
+              id: doc.id ?? "",
+              status: "error" as const,
+              error: err.message,
+            }))
+        }),
+      ).then((results) => {
+        const failed = results.filter((r) => r.status === "error").length
+        return { results, count: results.length - failed, failed }
+      }),
+    )
+  }
+
+  uploadFile(
+    _namespace: string,
+    request: DocumentUploadFileParams,
+    _opts?: RequestOptions,
+  ): APIPromise<DocumentFileResponse> {
+    return wrap(
+      Promise.all([this.cache.resolveFolderId(), uploadableToLetta(request.file)])
+        .then(([folderId, file]) => this.letta.folders.files.upload(folderId, { file }))
+        .then(
+          (result) => ({ id: result.id ?? "file_uploaded", status: "queued" as const }),
+          (err: Error) => {
+            throw new Error(`File upload failed: ${err.message}`)
+          },
+        ),
+    )
+  }
+}
+
+class LettaMemoriesAdapter {
+  constructor(
+    private readonly client: LettaMemoryClient,
+    private readonly cache: AgentCache,
+    private readonly _letta: Letta,
+  ) {}
+
+  get(
+    namespace: string,
+    id: string,
+    _request?: MemoryGetParams,
+    _opts?: RequestOptions,
+  ): APIPromise<MemoryGetResponse> {
+    return wrap(
+      this.client
+        .findPassage(namespace, id)
+        .then((passage) => ({ ...this.client.toMemory(passage), id })),
+    )
+  }
+
+  forget(
+    namespace: string,
+    request: MemoryForgetParams,
+    _opts?: RequestOptions,
+  ): APIPromise<MemoryForgetResponse> {
+    return wrap(
+      this.client.listPassages(namespace).then((passages) =>
+        Promise.all(
+          request.ids.map((id) => {
+            const passageId = this.cache.passageIdFor(id)
+            const passage = passages.find((p) => p.id === passageId)
+            if (!passage) return { id, error: `Memory not found: ${id}` }
+            return this.client
+              .deletePassage(namespace, passageId)
+              .then(() => {
+                this.cache.unbindDocument(id)
+                return { id, memory: passage.text }
+              })
+              .catch((err: Error) => ({ id, error: err.message }))
+          }),
+        ).then((results) => {
+          const matches = results.filter((r) => "memory" in r)
+          const errors = results.filter((r) => "error" in r)
+          return { count: matches.length, errors, matches }
+        }),
+      ),
+    )
+  }
+
+  /**
+   * Not supported: Letta passage search returns top-k results with no relevance
+   * threshold, so deleting "what matches" could remove unrelated memories.
+   */
+  forgetMatching(
+    _namespace: string,
+    _request: MemoryForgetMatchingParams,
+    _opts?: RequestOptions,
+  ): APIPromise<MemoryForgetResponse> {
+    return reject(
+      "memories.forgetMatching is not supported by the Letta adapter; " +
+        "search, then call memories.forget with explicit ids",
     )
   }
 }

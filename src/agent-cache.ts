@@ -1,8 +1,9 @@
 import type Letta from "@letta-ai/letta-client"
 
 export class AgentCache {
-  private tagToAgentId = new Map<string, string>()
+  private namespaceToAgentId = new Map<string, string>()
   private passageToAgentId = new Map<string, string>()
+  private documentToPassageId = new Map<string, string>()
   private pendingAgents = new Map<string, Promise<string>>()
   private folderId: string | null = null
 
@@ -11,26 +12,26 @@ export class AgentCache {
     private readonly model?: string,
   ) {}
 
-  async resolveAgentId(containerTag: string): Promise<string> {
-    const cached = this.tagToAgentId.get(containerTag)
+  async resolveAgentId(namespace: string): Promise<string> {
+    const cached = this.namespaceToAgentId.get(namespace)
     if (cached !== undefined) return cached
 
-    const pending = this.pendingAgents.get(containerTag)
+    const pending = this.pendingAgents.get(namespace)
     if (pending !== undefined) return pending
 
     const agentP = this.letta.agents
-      .create({ name: containerTag, ...(this.model ? { model: this.model } : {}) })
+      .create({ name: namespace, ...(this.model ? { model: this.model } : {}) })
       .then((agent) => {
-        this.tagToAgentId.set(containerTag, agent.id!)
-        this.pendingAgents.delete(containerTag)
+        this.namespaceToAgentId.set(namespace, agent.id!)
+        this.pendingAgents.delete(namespace)
         return agent.id!
       })
       .catch((err) => {
-        this.pendingAgents.delete(containerTag)
+        this.pendingAgents.delete(namespace)
         throw err
       })
 
-    this.pendingAgents.set(containerTag, agentP)
+    this.pendingAgents.set(namespace, agentP)
     return agentP
   }
 
@@ -58,10 +59,27 @@ export class AgentCache {
     return this.passageToAgentId.get(passageId)
   }
 
-  getTagForAgentId(agentId: string): string | undefined {
-    for (const [tag, id] of this.tagToAgentId) {
-      if (id === agentId) return tag
+  /**
+   * Letta passages are immutable, so a v5 document ID (caller-defined, or the first
+   * passage ID) stays stable while the backing passage is replaced on update.
+   */
+  bindDocument(documentId: string, passageId: string): void {
+    if (documentId === passageId) this.documentToPassageId.delete(documentId)
+    else this.documentToPassageId.set(documentId, passageId)
+  }
+
+  unbindDocument(documentId: string): void {
+    this.documentToPassageId.delete(documentId)
+  }
+
+  passageIdFor(documentId: string): string {
+    return this.documentToPassageId.get(documentId) ?? documentId
+  }
+
+  documentIdFor(passageId: string): string {
+    for (const [documentId, id] of this.documentToPassageId) {
+      if (id === passageId) return documentId
     }
-    return undefined
+    return passageId
   }
 }
