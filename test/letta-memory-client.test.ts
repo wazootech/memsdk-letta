@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { LettaMemoryClient } from "../src/index.ts"
 
 const mockAgentCreate = vi.fn()
@@ -7,10 +7,7 @@ const mockPassageList = vi.fn()
 const mockPassageDelete = vi.fn()
 const mockPassageSearch = vi.fn()
 const mockBlockList = vi.fn()
-const mockBlockUpdate = vi.fn()
-const mockFolderCreate = vi
-  .fn()
-  .mockResolvedValue({ id: "folder_1", name: "memsdk-uploads" })
+const mockFolderCreate = vi.fn()
 const mockFileUpload = vi.fn()
 
 vi.mock("@letta-ai/letta-client", () => ({
@@ -25,7 +22,6 @@ vi.mock("@letta-ai/letta-client", () => ({
       },
       blocks: {
         list: mockBlockList,
-        update: mockBlockUpdate,
       },
     },
     folders: {
@@ -37,12 +33,8 @@ vi.mock("@letta-ai/letta-client", () => ({
   })),
 }))
 
-function mockAgent(id: string, name: string) {
-  return { id, name, created_at: new Date().toISOString() }
-}
-
 function mockPassage(id: string, text: string, tags?: string[]) {
-  return { id, text, tags: tags ?? [], created_at: new Date().toISOString() }
+  return { id, text, tags: tags ?? [], created_at: "2026-10-08T16:00:00.000Z" }
 }
 
 function mockBlock(id: string, label: string, value: string) {
@@ -60,44 +52,94 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockAgentCreate.mockResolvedValue({ id: "agent_1", name: "default" })
   mockFolderCreate.mockResolvedValue({ id: "folder_1", name: "memsdk-uploads" })
+  mockPassageDelete.mockResolvedValue(undefined)
 })
 
 describe("LettaMemoryClient", () => {
   describe("add", () => {
-    it("creates a passage via agent", async () => {
+    it("creates a passage on the namespace's agent", async () => {
       mockPassageCreate.mockResolvedValue([
         mockPassage("passage_1", "Dhravya likes ML", ["user_123"]),
       ])
 
       const client = makeClient()
-      const result = await client.add({
-        content: "Dhravya likes ML",
-        containerTag: "user_123",
-      })
+      const result = await client.add("user_123", { content: "Dhravya likes ML" })
 
       expect(result).toEqual({ id: "passage_1", status: "queued" })
-      expect(mockPassageCreate).toHaveBeenCalledWith(expect.any(String), {
+      expect(mockAgentCreate).toHaveBeenCalledWith({ name: "user_123" })
+      expect(mockPassageCreate).toHaveBeenCalledWith("agent_1", {
         text: "Dhravya likes ML",
         tags: ["user_123"],
       })
     })
 
-    it("uses default containerTag when none provided", async () => {
-      mockPassageCreate.mockResolvedValue([mockPassage("passage_2", "hello")])
+    it("honors a caller-defined document id", async () => {
+      mockPassageCreate.mockResolvedValue([mockPassage("passage_1", "hello")])
+      mockPassageList.mockResolvedValue([mockPassage("passage_1", "hello")])
 
       const client = makeClient()
-      const result = await client.add({ content: "hello" })
+      const result = await client.add("user_123", {
+        content: "hello",
+        id: "doc_custom",
+      })
+      expect(result.id).toBe("doc_custom")
 
-      expect(result.id).toBe("passage_2")
-      expect(mockPassageCreate).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ text: "hello", tags: ["default"] }),
-      )
+      const doc = await client.documents.get("user_123", "doc_custom")
+      expect(doc).toMatchObject({ id: "doc_custom", content: "hello" })
+    })
+  })
+
+  describe("search", () => {
+    it("maps passage search results to v5 memory results", async () => {
+      mockPassageSearch.mockResolvedValue({
+        results: [{ id: "p1", content: "mem result", score: 0.85, timestamp: "t1" }],
+        count: 1,
+      })
+
+      const client = makeClient()
+      const result = await client.search("user_123", { query: "mem", limit: 5 })
+
+      expect(result.results).toEqual([
+        {
+          id: "p1",
+          memory: "mem result",
+          metadata: {},
+          similarity: 0.85,
+          isLatest: true,
+          isInference: false,
+          system: { updatedAt: "t1" },
+        },
+      ])
+      expect(typeof result.searchTime).toBe("number")
+      expect(mockPassageSearch).toHaveBeenCalledWith("agent_1", {
+        query: "mem",
+        top_k: 5,
+      })
+    })
+
+    it("returns chunk-shaped results in chunks mode", async () => {
+      mockPassageSearch.mockResolvedValue({
+        results: [{ id: "p1", content: "chunk text", score: 0.9, timestamp: "" }],
+        count: 1,
+      })
+
+      const client = makeClient()
+      const result = await client.search("user_123", {
+        query: "x",
+        searchMode: "chunks",
+      })
+
+      expect(result.results[0]?.chunk).toBe("chunk text")
+      expect(result.results[0]?.memory).toBeUndefined()
+      expect(mockPassageSearch).toHaveBeenCalledWith("agent_1", {
+        query: "x",
+        top_k: 10,
+      })
     })
   })
 
   describe("profile", () => {
-    it("returns aggregated block profile", async () => {
+    it("returns blocks as dynamic profile memories", async () => {
       mockBlockList.mockResolvedValue({
         data: [
           mockBlock("b1", "human", "Sarah"),
@@ -106,136 +148,144 @@ describe("LettaMemoryClient", () => {
       })
 
       const client = makeClient()
-      const result = await client.profile({ containerTag: "user_123" })
+      const result = await client.profile("user_123")
 
-      expect(result.profile.dynamic).toEqual(["human: Sarah", "persona: Friendly"])
-      expect(result.profile.static).toEqual([])
+      expect(result.profile).toEqual({
+        static: [],
+        dynamic: [
+          { id: "b1", memory: "human: Sarah" },
+          { id: "b2", memory: "persona: Friendly" },
+        ],
+        buckets: {},
+      })
     })
 
-    it("returns empty profile when no blocks", async () => {
-      mockBlockList.mockResolvedValue({ data: [] })
+    it("renders the profile as markdown", async () => {
+      mockBlockList.mockResolvedValue({ data: [mockBlock("b1", "human", "Sarah")] })
 
       const client = makeClient()
-      const result = await client.profile({ containerTag: "empty" })
+      const markdown = await client.profileMarkdown("user_123")
 
-      expect(result.profile.dynamic).toEqual([])
-      expect(result.profile.static).toEqual([])
+      expect(markdown).toContain("# Profile: user_123")
+      expect(markdown).toContain("## Static\n\n_None_")
+      expect(markdown).toContain("## Dynamic\n\n- human: Sarah")
     })
   })
 
-  describe("documents.list", () => {
-    it("lists passages for a containerTag", async () => {
-      mockPassageList.mockResolvedValue([mockPassage("p1", "Memory one", ["user_123"])])
+  describe("list", () => {
+    it("lists passages as documents with pagination", async () => {
+      mockPassageList.mockResolvedValue([
+        mockPassage("p1", "one"),
+        mockPassage("p2", "two"),
+        mockPassage("p3", "three"),
+      ])
 
       const client = makeClient()
-      const result = await client.documents.list({ containerTags: ["user_123"] })
+      const result = await client.list("user_123", "documents", { page: 2, limit: 2 })
 
-      expect(result.memories).toHaveLength(1)
-      expect(result.memories[0]?.id).toBe("p1")
-      expect(result.memories[0]?.content).toBe("Memory one")
+      expect(result.documents.map((d) => d.id)).toEqual(["p3"])
+      expect(result.chunks).toEqual([])
+      expect(result.memories).toEqual([])
+      expect(result.pagination).toEqual({
+        currentPage: 2,
+        limit: 2,
+        totalItems: 3,
+        totalPages: 2,
+      })
+    })
+
+    it("lists passages as memories", async () => {
+      mockPassageList.mockResolvedValue([mockPassage("p1", "Memory one")])
+
+      const client = makeClient()
+      const result = await client.list("user_123", "memories")
+
+      expect(result.memories[0]).toMatchObject({ id: "p1", memory: "Memory one" })
+      expect(result.documents).toEqual([])
     })
   })
 
   describe("documents.get", () => {
-    it("gets a passage by id", async () => {
-      mockPassageCreate.mockResolvedValue([mockPassage("p1", "prime", ["user_123"])])
-      mockPassageList.mockResolvedValue([mockPassage("p1", "Found me", ["user_123"])])
+    it("gets a document with optional chunks", async () => {
+      mockPassageList.mockResolvedValue([mockPassage("p1", "Found me")])
 
       const client = makeClient()
-      await client.add({ content: "prime", containerTag: "user_123" })
+      const result = await client.documents.get("user_123", "p1", {
+        include: ["chunks"],
+      })
 
-      const result = await client.documents.get("p1")
-      expect(result.id).toBe("p1")
-      expect(result.content).toBe("Found me")
+      expect(result).toMatchObject({ id: "p1", content: "Found me" })
+      expect(result.system.status).toBe("done")
+      expect(result.chunks?.[0]?.content).toBe("Found me")
+      expect(result.memories).toBeUndefined()
     })
 
-    it("throws for unknown passage", async () => {
+    it("throws for an unknown document", async () => {
+      mockPassageList.mockResolvedValue([])
+
       const client = makeClient()
-      await expect(client.documents.get("unknown")).rejects.toThrow(
-        "Unknown passage: unknown",
+      await expect(client.documents.get("user_123", "unknown")).rejects.toThrow(
+        "Document not found: unknown",
       )
     })
   })
 
-  describe("documents.delete", () => {
-    it("deletes a passage", async () => {
-      mockPassageCreate.mockResolvedValue([mockPassage("p1", "x", ["user_123"])])
-      mockPassageDelete.mockResolvedValue(undefined)
+  describe("documents.update", () => {
+    it("replaces the backing passage but keeps the document id stable", async () => {
+      mockPassageCreate
+        .mockResolvedValueOnce([mockPassage("p1", "old")])
+        .mockResolvedValueOnce([mockPassage("p2", "new content")])
+      mockPassageList
+        .mockResolvedValueOnce([mockPassage("p1", "old")])
+        .mockResolvedValueOnce([mockPassage("p2", "new content")])
 
       const client = makeClient()
-      await client.add({ content: "x", containerTag: "user_123" })
-
-      await client.documents.delete("p1")
-      expect(mockPassageDelete).toHaveBeenCalledWith("p1", {
-        agent_id: expect.any(String),
+      const { id } = await client.add("user_123", { content: "old" })
+      const result = await client.documents.update("user_123", id, {
+        content: "new content",
       })
+
+      expect(result).toEqual({ id: "p1", status: "queued" })
+      expect(mockPassageDelete).toHaveBeenCalledWith("p1", { agent_id: "agent_1" })
+
+      const doc = await client.documents.get("user_123", "p1")
+      expect(doc).toMatchObject({ id: "p1", content: "new content" })
     })
   })
 
-  describe("documents.update", () => {
-    it("deletes and recreates a passage", async () => {
-      mockPassageCreate.mockResolvedValueOnce([mockPassage("p1", "old", ["user_123"])])
-      mockPassageDelete.mockResolvedValue(undefined)
-      mockPassageCreate.mockResolvedValueOnce([
-        mockPassage("p2", "new content", ["user_123"]),
-      ])
+  describe("documents.delete", () => {
+    it("deletes passages and reports per-id errors", async () => {
+      mockPassageDelete
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error("gone"))
 
       const client = makeClient()
-      await client.add({ content: "old", containerTag: "user_123" })
+      const result = await client.documents.delete("user_123", { ids: ["p_a", "p_b"] })
 
-      const result = await client.documents.update("p1", {
-        content: "new content",
-        containerTag: "user_123",
-      })
-
-      expect(result.status).toBe("queued")
-      expect(result.id).toBe("p2")
-      expect(mockPassageDelete).toHaveBeenCalledWith("p1", {
-        agent_id: expect.any(String),
-      })
-      expect(mockPassageCreate).toHaveBeenCalledTimes(2)
+      expect(result).toEqual({ count: 1, errors: [{ id: "p_b", error: "gone" }] })
+      expect(mockPassageDelete).toHaveBeenCalledWith("p_a", { agent_id: "agent_1" })
     })
   })
 
   describe("documents.batchAdd", () => {
-    it("adds multiple passages", async () => {
+    it("adds multiple passages and counts accepted documents", async () => {
       mockPassageCreate
-        .mockResolvedValueOnce([mockPassage("p_a", "A", ["default"])])
-        .mockResolvedValueOnce([mockPassage("p_b", "B", ["default"])])
+        .mockResolvedValueOnce([mockPassage("p_a", "A")])
+        .mockRejectedValueOnce(new Error("boom"))
 
       const client = makeClient()
-      const result = await client.documents.batchAdd({
-        documents: [{ content: "A" }, { content: "B" }],
+      const result = await client.documents.batchAdd("user_123", {
+        documents: [{ content: "A" }, { content: "B", id: "doc_b" }],
       })
 
-      expect(result.success).toBe(2)
-      expect(result.failed).toBe(0)
-    })
-  })
-
-  describe("documents.deleteBulk", () => {
-    it("deletes multiple passages", async () => {
-      mockPassageCreate
-        .mockResolvedValueOnce([mockPassage("p_a", "A", ["default"])])
-        .mockResolvedValueOnce([mockPassage("p_b", "B", ["default"])])
-      mockPassageDelete.mockResolvedValue(undefined)
-
-      const client = makeClient()
-      await client.add({ content: "A", containerTag: "default" })
-      await client.add({ content: "B", containerTag: "default" })
-
-      const result = await client.documents.deleteBulk({ ids: ["p_a", "p_b"] })
-
-      expect(result.success).toBe(true)
-      expect(result.deletedCount).toBe(2)
-    })
-  })
-
-  describe("documents.listProcessing", () => {
-    it("returns empty", async () => {
-      const client = makeClient()
-      const result = await client.documents.listProcessing()
-      expect(result).toEqual({ documents: [], totalCount: 0 })
+      expect(result).toEqual({
+        results: [
+          { id: "p_a", status: "queued" },
+          { id: "doc_b", status: "error", error: "boom" },
+        ],
+        count: 1,
+        failed: 1,
+      })
     })
   })
 
@@ -244,191 +294,100 @@ describe("LettaMemoryClient", () => {
       mockFileUpload.mockResolvedValue({ id: "file_1", processing_status: "completed" })
 
       const client = makeClient()
-      const blob = new Blob(["test content"], { type: "text/plain" })
-      const result = await client.documents.uploadFile({
-        file: new File([blob], "test.txt", { type: "text/plain" }),
-        containerTag: "user_123",
+      const result = await client.documents.uploadFile("user_123", {
+        file: new File(["test content"], "test.txt", { type: "text/plain" }),
       })
 
-      expect(result.id).toBe("file_1")
-      expect(result.status).toBe("queued")
+      expect(result).toEqual({ id: "file_1", status: "queued" })
+      expect(mockFileUpload).toHaveBeenCalledWith("folder_1", {
+        file: expect.any(File),
+      })
     })
-  })
 
-  describe("search.documents", () => {
-    it("searches passages via agent", async () => {
-      mockPassageSearch.mockResolvedValue({
-        results: [{ id: "p1", content: "result", score: 0.95, timestamp: "" }],
-        count: 1,
-      })
+    it("wraps raw bytes with their filename", async () => {
+      mockFileUpload.mockResolvedValue({ id: "file_2" })
 
       const client = makeClient()
-      const result = await client.search.documents({
-        q: "test",
-        containerTag: "user_123",
+      await client.documents.uploadFile("user_123", {
+        file: { data: new TextEncoder().encode("bytes"), filename: "notes.md" },
       })
 
-      expect(result.total).toBe(1)
-      expect(result.results).toHaveLength(1)
-      expect(result.results[0]?.documentId).toBe("p1")
-      expect(mockPassageSearch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ query: "test", top_k: 10 }),
-      )
-    })
-  })
-
-  describe("search.execute", () => {
-    it("is an alias for search.documents", async () => {
-      mockPassageSearch.mockResolvedValue({
-        results: [{ id: "p1", content: "exec", score: 0.9, timestamp: "" }],
-        count: 1,
-      })
-
-      const client = makeClient()
-      const result = await client.search.execute({
-        q: "exec",
-        containerTag: "user_123",
-      })
-
-      expect(result.total).toBe(1)
-    })
-  })
-
-  describe("search.memories", () => {
-    it("returns memory-shaped search results", async () => {
-      mockPassageSearch.mockResolvedValue({
-        results: [{ id: "p1", content: "mem result", score: 0.85, timestamp: "" }],
-        count: 1,
-      })
-
-      const client = makeClient()
-      const result = await client.search.memories({
-        q: "mem",
-        containerTag: "user_123",
-      })
-
-      expect(result.total).toBe(1)
-      expect(result.results[0]?.memory).toBe("mem result")
-      expect(result.results[0]?.similarity).toBe(0.85)
-    })
-  })
-
-  describe("search (callable)", () => {
-    it("is callable and returns memory-shaped results", async () => {
-      mockPassageSearch.mockResolvedValue({
-        results: [{ id: "p1", content: "callable result", score: 0.9, timestamp: "" }],
-        count: 1,
-      })
-
-      const client = makeClient()
-      const result = await client.search({
-        q: "callable",
-        containerTag: "user_123",
-        searchMode: "hybrid",
-      })
-
-      expect(result.total).toBe(1)
-      expect(result.results[0]?.memory).toBe("callable result")
-      expect(result.results[0]?.similarity).toBe(0.9)
-      expect(mockPassageSearch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ query: "callable", top_k: 10 }),
-      )
-    })
-  })
-
-  describe("memories.forget", () => {
-    it("forgets a passage", async () => {
-      mockPassageCreate.mockResolvedValue([mockPassage("p1", "x", ["user_123"])])
-      mockPassageDelete.mockResolvedValue(undefined)
-
-      const client = makeClient()
-      await client.add({ content: "x", containerTag: "user_123" })
-
-      const result = await client.memories.forget({
-        containerTag: "user_123",
-        id: "p1",
-      })
-
-      expect(result.forgotten).toBe(true)
-      expect(result.id).toBe("p1")
+      const uploaded = mockFileUpload.mock.calls[0]?.[1].file as File
+      expect(uploaded.name).toBe("notes.md")
+      expect(await uploaded.text()).toBe("bytes")
     })
 
-    it("throws when id is missing", async () => {
+    it("rejects path uploads", async () => {
       const client = makeClient()
       await expect(
-        client.memories.forget({ containerTag: "user_123" } as any),
-      ).rejects.toThrow("id is required")
+        client.documents.uploadFile("user_123", { file: { path: "/tmp/x.txt" } }),
+      ).rejects.toThrow("Path uploads are not supported")
     })
   })
 
-  describe("memories.updateMemory", () => {
-    it("finds human block and updates it", async () => {
-      mockBlockList.mockResolvedValue({
-        data: [mockBlock("b0", "persona", "Friendly"), mockBlock("b1", "human", "old")],
-      })
-      mockBlockUpdate.mockResolvedValue(mockBlock("b1", "human", "updated memory"))
+  describe("memories", () => {
+    it("gets a memory by id", async () => {
+      mockPassageList.mockResolvedValue([mockPassage("p1", "likes tea")])
 
       const client = makeClient()
-      const result = await client.memories.updateMemory({
-        containerTag: "user_123",
-        content: "old",
-        newContent: "updated memory",
-      })
+      const result = await client.memories.get("user_123", "p1")
 
-      expect(result.memory).toBe("updated memory")
-      expect(result.version).toBe(1)
-      expect(mockBlockUpdate).toHaveBeenCalledWith("human", {
-        agent_id: expect.any(String),
-        value: "updated memory",
+      expect(result).toMatchObject({
+        id: "p1",
+        memory: "likes tea",
+        isForgotten: false,
       })
     })
 
-    it("falls back to first block when no human label", async () => {
-      mockBlockList.mockResolvedValue({
-        data: [mockBlock("b2", "custom", "first")],
-      })
-      mockBlockUpdate.mockResolvedValue(mockBlock("b2", "custom", "updated"))
+    it("forgets memories by id", async () => {
+      mockPassageList.mockResolvedValue([mockPassage("p1", "x")])
 
       const client = makeClient()
-      await client.memories.updateMemory({
-        containerTag: "user_123",
-        content: "first",
-        newContent: "updated",
+      const result = await client.memories.forget("user_123", {
+        ids: ["p1", "missing"],
       })
 
-      expect(mockBlockUpdate).toHaveBeenCalledWith("custom", {
-        agent_id: expect.any(String),
-        value: "updated",
+      expect(result).toEqual({
+        count: 1,
+        matches: [{ id: "p1", memory: "x" }],
+        errors: [{ id: "missing", error: "Memory not found: missing" }],
       })
+      expect(mockPassageDelete).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not support forgetMatching", async () => {
+      const client = makeClient()
+      await expect(
+        client.memories.forgetMatching("user_123", { query: "tea", dryRun: true }),
+      ).rejects.toThrow("not supported")
+      expect(mockPassageDelete).not.toHaveBeenCalled()
     })
   })
 
   describe("error handling", () => {
     it("propagates API errors", async () => {
-      const apiError = new Error("API Error: 404 Not Found")
-      ;(apiError as any).status = 404
-      mockAgentCreate.mockRejectedValue(apiError)
+      mockAgentCreate.mockRejectedValue(new Error("API Error: 404 Not Found"))
 
       const client = makeClient()
-      await expect(client.profile({ containerTag: "nonexistent" })).rejects.toThrow(
+      await expect(client.profile("nonexistent")).rejects.toThrow(
         "API Error: 404 Not Found",
       )
     })
   })
 
   describe("agent cache deduplication", () => {
-    it("creates an agent only once for the same tag", async () => {
-      mockPassageCreate.mockResolvedValue([mockPassage("p1", "A")])
-      mockPassageCreate.mockResolvedValue([mockPassage("p2", "B")])
+    it("creates an agent only once for the same namespace", async () => {
+      mockPassageCreate
+        .mockResolvedValueOnce([mockPassage("p1", "A")])
+        .mockResolvedValueOnce([mockPassage("p2", "B")])
 
       const client = makeClient()
       await Promise.all([
-        client.add({ content: "A", containerTag: "shared" }),
-        client.add({ content: "B", containerTag: "shared" }),
+        client.add("shared", { content: "A" }),
+        client.add("shared", { content: "B" }),
       ])
 
+      expect(mockAgentCreate).toHaveBeenCalledTimes(1)
       expect(mockPassageCreate).toHaveBeenCalledTimes(2)
     })
   })

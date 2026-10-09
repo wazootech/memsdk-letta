@@ -8,22 +8,27 @@ describe("memsdk-letta exports", () => {
       apiKey: "test-key",
     })
     expect(client).toBeInstanceOf(LettaMemoryClient)
-    expect(typeof client.add).toBe("function")
-    expect(typeof client.profile).toBe("function")
-    expect(typeof client.documents.add).toBe("function")
-    expect(typeof client.documents.get).toBe("function")
-    expect(typeof client.documents.list).toBe("function")
-    expect(typeof client.documents.delete).toBe("function")
-    expect(typeof client.documents.update).toBe("function")
-    expect(typeof client.documents.batchAdd).toBe("function")
-    expect(typeof client.documents.deleteBulk).toBe("function")
-    expect(typeof client.documents.listProcessing).toBe("function")
-    expect(typeof client.documents.uploadFile).toBe("function")
-    expect(typeof client.search.documents).toBe("function")
-    expect(typeof client.search.execute).toBe("function")
-    expect(typeof client.search.memories).toBe("function")
-    expect(typeof client.memories.forget).toBe("function")
-    expect(typeof client.memories.updateMemory).toBe("function")
+    for (const method of [
+      "add",
+      "search",
+      "profile",
+      "profileMarkdown",
+      "list",
+    ] as const) {
+      expect(typeof client[method]).toBe("function")
+    }
+    for (const method of [
+      "get",
+      "update",
+      "delete",
+      "batchAdd",
+      "uploadFile",
+    ] as const) {
+      expect(typeof client.documents[method]).toBe("function")
+    }
+    for (const method of ["get", "forget", "forgetMatching"] as const) {
+      expect(typeof client.memories[method]).toBe("function")
+    }
   })
 
   it("exposes a createSupermemory factory returning a SupermemoryInterface", () => {

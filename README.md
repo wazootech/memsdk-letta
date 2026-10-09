@@ -44,6 +44,9 @@ declarations from `dist`.
 
 ## Usage
 
+The adapter implements the Supermemory **API v5** contract from `memsdk`: every call is
+scoped to a namespace passed as the first argument.
+
 ```typescript
 import { createSupermemory } from "memsdk-letta"
 
@@ -53,16 +56,15 @@ const memory = createSupermemory({
 })
 
 // All SupermemoryInterface methods are available:
-await memory.add({
+await memory.add("user_123", {
   content: "Dhravya prefers ML over traditional programming.",
-  containerTag: "user_123",
 })
 
-const profile = await memory.profile({ containerTag: "user_123" })
+const profile = await memory.profile("user_123")
 
-const docs = await memory.documents.list({ containerTags: ["user_123"] })
+const docs = await memory.list("user_123", "documents")
 
-const results = await memory.search.documents({ q: "ML", containerTag: "user_123" })
+const results = await memory.search("user_123", { query: "ML" })
 ```
 
 For direct access to the underlying class, import `LettaMemoryClient` and construct with
@@ -70,32 +72,48 @@ For direct access to the underlying class, import `LettaMemoryClient` and constr
 
 ## Mapping
 
-| Supermemory concept                | Letta SDK implementation                                                                             |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `containerTag`                     | Letta agent (one agent per tag, created via `letta.agents.create`)                                   |
-| `memory.add()` / `documents.add()` | `letta.agents.passages.create(agentId, { text, tags })`                                              |
-| `memory.profile()`                 | `letta.agents.blocks.list(agentId, {})` — aggregated block labels + values                           |
-| `documents.get()`                  | `letta.agents.passages.list(agentId, {})` — find by id                                               |
-| `documents.list()`                 | `letta.agents.passages.list(agentId, {})`                                                            |
-| `documents.update()`               | `letta.agents.passages.delete()` + `letta.agents.passages.create()`                                  |
-| `documents.delete()`               | `letta.agents.passages.delete(id, { agent_id })`                                                     |
-| `search.*`                         | `letta.agents.passages.search(agentId, { query, top_k })`                                            |
-| `memories.forget()`                | `letta.agents.passages.delete(id, { agent_id })`                                                     |
-| `memories.updateMemory()`          | `letta.agents.blocks.list()` → find label → `letta.agents.blocks.update(label, { agent_id, value })` |
-| `documents.uploadFile()`           | `letta.folders.create({ embedding_config })` + `letta.folders.files.upload(folderId, { file })`      |
-| `documents.listProcessing()`       | Returns empty (capability-gated)                                                                     |
+| Supermemory v5 concept      | Letta SDK implementation                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------------------------- |
+| `namespace`                 | Letta agent (one agent per namespace, created via `letta.agents.create`)                        |
+| `add()`                     | `letta.agents.passages.create(agentId, { text, tags: [namespace] })`                            |
+| `search()`                  | `letta.agents.passages.search(agentId, { query, top_k: limit })`                                |
+| `profile()`                 | `letta.agents.blocks.list(agentId, {})`: block labels + values as dynamic memories              |
+| `profileMarkdown()`         | `profile()` rendered as markdown                                                                |
+| `list()`                    | `letta.agents.passages.list(agentId, {})`, shaped as documents, chunks, or memories             |
+| `documents.get()`           | `letta.agents.passages.list(agentId, {})`: find by id                                           |
+| `documents.update()`        | `letta.agents.passages.create()` + `letta.agents.passages.delete()` (document id stays stable)  |
+| `documents.delete()`        | `letta.agents.passages.delete(id, { agent_id })` per id                                         |
+| `documents.batchAdd()`      | `add()` per document                                                                            |
+| `documents.uploadFile()`    | `letta.folders.create({ embedding_config })` + `letta.folders.files.upload(folderId, { file })` |
+| `memories.get()`            | `letta.agents.passages.list(agentId, {})`: find by id                                           |
+| `memories.forget()`         | `letta.agents.passages.delete(id, { agent_id })` per id                                         |
+| `memories.forgetMatching()` | Not supported (rejects); see below                                                              |
+
+### Backend limitations
+
+- **Document ids**: Letta passages are immutable and have server-assigned ids. The
+  adapter keeps v5's stable-id semantics (caller-defined `id` on `add`, unchanged id
+  after `documents.update`) with an in-process alias map, so aliases do not survive a
+  process restart.
+- **`memories.forgetMatching`** rejects: Letta passage search returns top-k results with
+  no relevance threshold, so deleting "whatever matches" could remove unrelated
+  memories. Search, then call `memories.forget` with explicit ids.
+- **Ignored fields**: `metadata`, `group`, `date`, `supportingContext`, `dreaming`,
+  `taskType`, `filter`, `threshold`, `rerank`, and profile `buckets` have no Letta
+  equivalent and are accepted but not applied.
+- **Uploads**: `{ path }` uploads are rejected; pass file data instead.
 
 ## Conformance
 
 - **Required interface conformance**: Every `SupermemoryInterface` method is wired to a
   typed Letta SDK call with matching parameter and response types. Verified at compile
-  time via type-level compatibility test.
-- **Required behavior conformance**: Core add/get/list/search/update/delete/forget flows
-  verified against a live Letta Docker server via
-  [memsdk-e2e](https://github.com/wazootech/memsdk-e2e)
-- **Optional capability**: `uploadFile` (verified passing with inline
-  `embedding_config`), `listProcessing` (returns empty), `asResponse()`/`withResponse()`
-  (not implemented)
+  time via a type-level compatibility test against the v5 contract.
+- **Required behavior conformance**: Core flows were verified against a live Letta
+  Docker server via [memsdk-e2e](https://github.com/wazootech/memsdk-e2e) for the **v4**
+  contract. Re-verification against v5 is pending
+  ([memsdk#21](https://github.com/wazootech/memsdk/issues/21)).
+- **Optional capability**: `uploadFile` (verified with inline `embedding_config` on v4),
+  `withRawResponse()` (not implemented).
 
 ## License
 
