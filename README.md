@@ -1,3 +1,14 @@
+<p align="center">
+  <a href="https://docs.wazoo.dev">
+    <img src="https://wazoo.dev/assets/wazoo.svg" alt="Wazoo" width="120" />
+  </a>
+  <br /><br />
+  <em>A memsdk adapter that uses <a href="https://docs.letta.com/">Letta</a> as its memory backend.</em>
+  <br /><br />
+  <a href="https://github.com/wazootech/memsdk-letta"><img src="https://img.shields.io/badge/GitHub-black?logo=github" alt="GitHub" /></a>
+  <a href="https://deepwiki.com/wazootech/memsdk-letta"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
+</p>
+
 # memsdk-letta
 
 Letta-backed implementation of the [memsdk](https://github.com/wazootech/memsdk)
