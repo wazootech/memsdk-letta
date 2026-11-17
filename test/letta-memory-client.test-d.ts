@@ -11,12 +11,12 @@ type _LettaSatisfiesSupermemory = Assert<
 
 declare const client: LettaMemoryClient
 
-const factoryClient = createSupermemory({
+const _factoryClient = createSupermemory({
   baseUrl: "http://localhost:8283",
   apiKey: "test-key",
 })
 type _FactoryReturnSatisfiesSupermemory = Assert<
-  Extends<typeof factoryClient, SupermemoryInterface>
+  Extends<typeof _factoryClient, SupermemoryInterface>
 >
 
 await client.add("user_123", { content: "hello", id: "doc_1" })

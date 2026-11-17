@@ -1,3 +1,6 @@
 node_modules
 dist
 coverage
+# Spec-exact shared workflows; keep byte-identical across the org.
+.github/workflows/code-health.yml
+.github/workflows/secret-scan.yml
