@@ -42,16 +42,43 @@ The adapter depends on `memsdk` via GitHub as well. During installation, both pa
 build from source via `prepare` and expose compiled ESM entrypoints and TypeScript
 declarations from `dist`.
 
+### CDN (browser / no build step)
+
+Import `LettaMemoryClient` in a browser module via [esm.sh](https://esm.sh). The CDN
+serves the adapter from GitHub and resolves the Letta SDK dependency.
+
+```js
+import { LettaMemoryClient } from "https://esm.sh/gh/wazootech/memsdk-letta"
+```
+
+To use the package name in browser modules, add an import map:
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "memsdk-letta": "https://esm.sh/gh/wazootech/memsdk-letta"
+    }
+  }
+</script>
+<script type="module">
+  import { LettaMemoryClient } from "memsdk-letta"
+</script>
+```
+
+The browser must be able to reach your Letta server. For cross-origin requests, the
+server must allow your app's origin via CORS.
+
 ### Runtime support
 
-| Runtime            | Status              | Installation path                                                                                                                          |
-| ------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Node.js            | Supported           | `npm install github:wazootech/memsdk-letta`                                                                                                |
-| pnpm/yarn projects | Supported           | `pnpm add github:wazootech/memsdk-letta` or `yarn add github:wazootech/memsdk-letta`                                                       |
-| Bun                | Supported           | `bun add github:wazootech/memsdk-letta`                                                                                                    |
-| Vite/browser apps  | Not first-class     | This adapter talks to a Letta server and depends on the Letta SDK; use server-side unless you have validated browser bundling for your app |
-| Deno               | Not first-class yet | Use through npm/package-manager compatibility where available; direct URL imports are not documented yet                                   |
-| Browser/CDN        | Not first-class yet | Requires a published package, release artifact, or committed browser build                                                                 |
+| Runtime            | Status               | Installation path                                                                                                                          |
+| ------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Node.js            | Supported            | `npm install github:wazootech/memsdk-letta`                                                                                                |
+| pnpm/yarn projects | Supported            | `pnpm add github:wazootech/memsdk-letta` or `yarn add github:wazootech/memsdk-letta`                                                       |
+| Bun                | Supported            | `bun add github:wazootech/memsdk-letta`                                                                                                    |
+| Vite/browser apps  | Not first-class      | This adapter talks to a Letta server and depends on the Letta SDK; use server-side unless you have validated browser bundling for your app |
+| Deno               | Not first-class yet  | Use through npm/package-manager compatibility where available; direct URL imports are not documented yet                                   |
+| Browser/CDN        | Supported via esm.sh | Direct ES module import or import map (see [CDN](#cdn-browser--no-build-step))                                                             |
 
 ## Usage
 
